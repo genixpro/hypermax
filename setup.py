@@ -14,7 +14,7 @@ setup(
     zip_safe=False,
     entry_points={
         'console_scripts': [
-            'hypermax = hypermax.cui:launchHypermaxUI',
+            'hypermax = hypermax.cli:main',
         ]
     }
 )
