@@ -20,7 +20,8 @@ class Optimizer:
     resultInformationKeys = [
         'trial',
         'status',
-        'loss'
+        'loss',
+        'log'
     ]
 
     def __init__(self, configuration):
@@ -73,8 +74,21 @@ class Optimizer:
 
             result = {}
             result['trial'] = trial
-            result['loss'] = modelResult['accuracy']
-            result['status'] = 'ok'
+
+            if 'loss' in modelResult:
+                result['loss'] = modelResult['loss']
+            elif 'accuracy' in modelResult:
+                result['loss'] = modelResult['accuracy']
+
+            if 'status' in modelResult:
+                result['status'] = modelResult['status']
+            else:
+                result['status'] = 'ok'
+
+            if 'log' in modelResult:
+                result['log'] = modelResult['log']
+            else:
+                result['log'] = ''
 
             for key in params.keys():
                 if key not in result:
@@ -109,7 +123,8 @@ class Optimizer:
             data = {
                 "trial": trialIndex,
                 "status": trial['result']['status'],
-                "loss": trial['result']['loss']
+                "loss": trial['result']['loss'],
+                "log": ""
             }
 
             params = trial['misc']['vals']

@@ -15,11 +15,12 @@ class Executor:
             script += "result = " + self.config['name'] + "(" + json.dumps(parameters) + ")\n"
             script += "print(json.dumps(result))"
 
-            process = subprocess.Popen(['python3', '-c', script], stdout=subprocess.PIPE)
+            process = subprocess.Popen(['python3', '-c', script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             atexit.register(lambda: process.kill())
             process.wait()
             try:
                 result = json.load(process.stdout)
+                result['log'] = str(process.stderr.read(), 'utf8')
                 return result
             except json.JSONDecodeError as e:
-                return {"status": "failed", "accuracy": 0}
+                return {"status": "failed", "loss": 10, "log": str(process.stdout.read(), 'utf8') + str(process.stderr.read(), 'utf8')}

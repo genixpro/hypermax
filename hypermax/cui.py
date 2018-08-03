@@ -3,7 +3,6 @@ import urwid
 from pprint import pformat
 import numpy
 import sys
-<<<<<<< HEAD
 import os.path
 import csv
 from panwid import DataTable, DataTableColumn
@@ -19,11 +18,6 @@ def makeMountedFrame(widget, header):
         urwid.Padding(urwid.Filler(shadow, height=('relative', 100), top=1, bottom=1), left=1, right=1), 'background')
     return padding
 
-=======
-from panwid import DataTable, DataTableColumn
-from hypermax.hyperparameter import Hyperparameter
-
->>>>>>> 1f8b74281b0737827012070f4ec348b4dc959be7
 class ScrollableDataTable(DataTable):
     def __init__(self, *args, **kwargs):
         if 'keepColumns' in kwargs:
@@ -55,7 +49,6 @@ class ScrollableDataTable(DataTable):
 
         if key != 'up' or self.focus_position < 1:
             return key
-<<<<<<< HEAD
 
 class ExportFilePopup(urwid.WidgetWrap):
     signals = ['close']
@@ -376,24 +369,29 @@ def launchHypermaxUI(optimizer):
                     trialsTable.apply_filters()
                     tableResultsSize += len(resultsToAdd)
 
-            allResults = numpy.array([result['loss'] for result in optimizer.results])
+            if len(optimizer.results) > 3:
+                allResults = numpy.array([result['loss'] for result in optimizer.results])
+                allResults = [numpy.mean(allResults[max(0, index-10):min(len(allResults)-1, index+10)]) for index in range(0, len(allResults), 1)]
 
-            allResults = [numpy.mean(allResults[max(0, index-10):min(len(allResults)-1, index+10)]) for index in range(0, len(allResults), 1)]
+                top = 0
+                data = []
+                for result in allResults[-min(len(allResults), 50):]:
+                    data.append([result])
+                    top = max(top, result*1.1)
 
-            top = 0
-            data = []
-            for result in allResults[-min(len(allResults), 50):]:
-                data.append([result])
-                top = max(top, result*1.1)
+                graph.set_data(data, top)
 
-            graph.set_data(data, top)
+                if top == 0:
+                    top = 1
+                labels = [[i, '{:.3f}'.format(i)] for i in numpy.arange(0.0, top, top/100.0)]
+                graphVscale = urwid.AttrWrap(urwid.GraphVScale(labels=labels, top=top), 'graph_label')
+                graphColumns.contents[0] = (urwid.Padding(graphVscale, left=3, right=0), (urwid.GIVEN, 10, False))
+                graphColumns.contents[2] = (urwid.Padding(graphVscale, left=1, right=2), (urwid.GIVEN, 10, False))
 
-            if top == 0:
-                top = 1
-            labels = [[i, '{:.3f}'.format(i)] for i in numpy.arange(0.0, top, top/100.0)]
-            graphVscale = urwid.AttrWrap(urwid.GraphVScale(labels=labels, top=top), 'graph_label')
-            graphColumns.contents[0] = (urwid.Padding(graphVscale, left=3, right=0), (urwid.GIVEN, 10, False))
-            graphColumns.contents[2] = (urwid.Padding(graphVscale, left=1, right=2), (urwid.GIVEN, 10, False))
+            if len(optimizer.results) > 0:
+                if optimizer.results[-1]['status'] != 'ok':
+                    statusText += optimizer.results[-1]['log']
+                    status.set_text(statusText)
 
 
     except urwid.ExitMainLoop:
