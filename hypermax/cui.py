@@ -3,6 +3,7 @@ import urwid
 from pprint import pformat
 import numpy
 import sys
+<<<<<<< HEAD
 import os.path
 import csv
 from panwid import DataTable, DataTableColumn
@@ -18,6 +19,11 @@ def makeMountedFrame(widget, header):
         urwid.Padding(urwid.Filler(shadow, height=('relative', 100), top=1, bottom=1), left=1, right=1), 'background')
     return padding
 
+=======
+from panwid import DataTable, DataTableColumn
+from hypermax.hyperparameter import Hyperparameter
+
+>>>>>>> 1f8b74281b0737827012070f4ec348b4dc959be7
 class ScrollableDataTable(DataTable):
     def __init__(self, *args, **kwargs):
         if 'keepColumns' in kwargs:
@@ -49,6 +55,7 @@ class ScrollableDataTable(DataTable):
 
         if key != 'up' or self.focus_position < 1:
             return key
+<<<<<<< HEAD
 
 class ExportFilePopup(urwid.WidgetWrap):
     signals = ['close']
