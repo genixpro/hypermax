@@ -4,6 +4,7 @@ from pprint import pformat
 import numpy
 import sys
 import os.path
+import csv
 from panwid import DataTable, DataTableColumn
 from hypermax.hyperparameter import Hyperparameter
 
@@ -58,7 +59,7 @@ class ExportFilePopup(urwid.WidgetWrap):
 
         self.edit = urwid.Edit(edit_text=os.path.join(os.getcwd(), "results.csv"))
 
-        save_button = urwid.Button("save")
+        save_button = urwid.Button("Save")
         close_button = urwid.Button("Cancel")
         urwid.connect_signal(close_button, 'click',lambda button: self._emit("close"))
         urwid.connect_signal(save_button, 'click',lambda button: self.saveResults())
@@ -73,16 +74,82 @@ class ExportFilePopup(urwid.WidgetWrap):
         self.optimizer.exportCSV(self.edit.edit_text)
         self._emit('close')
 
+class CovarianceGridPopup(urwid.WidgetWrap):
+    signals = ['close']
+
+    """A dialog that appears with nothing but a close button """
+    def __init__(self, optimizer):
+
+        matrix, labels = optimizer.computeCovariances()
+
+        columns = [DataTableColumn('field', label='field', width=16, align="right", attr="body", padding=0)]
+        for label in labels:
+            column = DataTableColumn(label, label=label, width=16, align="right", attr="body", padding=0)
+            columns.append(column)
+
+        data = []
+        for index, row in enumerate(matrix):
+            rowData = {
+                'field': labels[index]
+            }
+
+            for labelIndex, label in enumerate(labels):
+                rowData[label] = row[labelIndex]
+
+            data.append(rowData)
+
+        self.data = data
+        self.labels = labels
+
+        table = ScrollableDataTable(columns = columns, data=data)
+
+        close_button = urwid.Button("Cancel")
+        urwid.connect_signal(close_button, 'click',lambda button: self._emit("close"))
+
+        export_button = urwid.Button("Export")
+        urwid.connect_signal(export_button, 'click',lambda button: self.exportCovariances())
+
+        buttons = urwid.Filler(urwid.Columns([close_button, export_button]))
+
+        super(CovarianceGridPopup, self).__init__(makeMountedFrame(urwid.Pile([table, buttons]), 'Export File'))
+
+        self.optimizer = optimizer
+
+    def exportCovariances(self):
+        self._emit('close')
+
+        with open('covariances.csv', 'wt') as file:
+            writer = csv.DictWriter(file, fieldnames=['field'] + self.labels)
+            writer.writerows(self.data)
+
+
+class MessagePopup(urwid.WidgetWrap):
+    signals = ['close']
+
+    """A dialog that appears with nothing but a close button """
+    def __init__(self, message):
+
+        text = urwid.Text(message)
+        close_button = urwid.Button("Cancel")
+        urwid.connect_signal(close_button, 'click',lambda button: self._emit("close"))
+
+        super(MessagePopup, self).__init__(makeMountedFrame(urwid.Filler(urwid.Pile([text, close_button])), 'Warning'))
+
 class PopupContainer(urwid.PopUpLauncher):
     def __init__(self, widget, optimizer):
         super(PopupContainer, self).__init__(widget)
 
         self.optimizer = optimizer
 
+    def open_pop_up_with_widget(self, type, size=(('relative', 50), 15)):
+        self.type = type
+        self.size = size
+        self.open_pop_up()
+
     def create_pop_up(self):
-        pop_up = ExportFilePopup(self.optimizer)
+        pop_up = self.type
         urwid.connect_signal(pop_up, 'close', lambda button: self.close_pop_up())
-        return urwid.AttrWrap(urwid.Filler(urwid.Padding(pop_up, 'center', width=('relative', 50)), height=15), 'background')
+        return urwid.AttrWrap(urwid.Filler(urwid.Padding(pop_up, 'center', width=self.size[0]), height=self.size[1]), 'background')
 
     def get_pop_up_parameters(self):
         return {'left':0, 'top':0, 'overlay_width':('relative', 100.0), 'overlay_height':('relative', 100.0)}
@@ -140,8 +207,12 @@ def launchHypermaxUI(optimizer):
     def onExitClicked(widget):
         raise urwid.ExitMainLoop()
 
-    def onExportResultsClicked(widget):
-        pass
+    def viewHyperparameterCovariances():
+        if optimizer.results:
+            popupContainer.open_pop_up_with_widget(CovarianceGridPopup(optimizer), size=(('relative', 95), ('relative', 95)))
+        else:
+            popupContainer.open_pop_up_with_widget(MessagePopup('No results to compute covariance on yet.'), size=(('relative', 95), ('relative', 95)))
+
 
     popupContainer = None
     graph = None
@@ -150,8 +221,8 @@ def launchHypermaxUI(optimizer):
     status = None
     def makeMainMenu():
         content = [
-            urwid.AttrWrap(urwid.Button("Export Results to CSV", on_press=lambda button: popupContainer.open_pop_up()), 'body', focus_attr='focus'),
-            urwid.AttrWrap(urwid.Button('View Hyper Parameters'), 'body', focus_attr='focus'),
+            urwid.AttrWrap(urwid.Button("Export Results to CSV", on_press=lambda button: popupContainer.open_pop_up_with_widget(ExportFilePopup(optimizer))), 'body', focus_attr='focus'),
+            urwid.AttrWrap(urwid.Button('View Hyperparameter Covariances', on_press=lambda button: viewHyperparameterCovariances()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('Exit', on_press=onExitClicked), 'body', focus_attr='focus')
         ]
 
