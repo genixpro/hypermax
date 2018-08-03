@@ -17,3 +17,5 @@ def main():
     optimizer = Optimizer(config_data)
 
     optimizer.runOptimization()
+
+    hypermax.cui.launchHypermaxUI(optimizer)

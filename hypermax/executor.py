@@ -16,6 +16,6 @@ class Executor:
             process = subprocess.run(['python3', '-c', script], stdout=subprocess.PIPE)
             result = json.loads(process.stdout)
 
-            print("Finished: ", parameters, "Loss: ", result['accuracy'])
+            # print("Finished: ", parameters, "Loss: ", result['accuracy'])
 
             return result

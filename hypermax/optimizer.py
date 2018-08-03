@@ -5,6 +5,8 @@ from pprint import pprint
 import datetime
 import time
 import numpy.random
+import threading
+import queue
 import random
 import concurrent.futures
 import functools
@@ -31,8 +33,15 @@ class Optimizer:
         self.best = None
         self.bestLoss = None
 
+        self.thread = threading.Thread(target=lambda: self.optimizationThread())
+
+        self.totalTrials = 100
+
     def __del__(self):
         self.threadExecutor.shutdown(wait=True)
+
+    def completed(self):
+        return len(self.results)
 
     def sampleNext(self):
         rstate = numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))
@@ -84,13 +93,11 @@ class Optimizer:
         self.results = self.results + results
 
     def runOptimization(self):
-        count = 0
-        while count < 10000:
-            self.runOptimizationRound()
-            count += 1
+        self.thread.start()
 
-            if self.best['loss'] < 0.2:
-                break
+    def optimizationThread(self):
+        while len(self.results) < self.totalTrials:
+            self.runOptimizationRound()
 
     def convertTrialsToResults(self, trials):
         results = []
