@@ -90,9 +90,19 @@ class Optimizer:
             else:
                 result['log'] = ''
 
+            def recurse(key, value, root):
+                result_key = root + "." + key
+                if isinstance(value, str):
+                    result[result_key[1:]] = value
+                elif isinstance(value, float) or isinstance(value, bool) or isinstance(value, int):
+                    result[result_key[1:]] = value
+                elif isinstance(value, dict):
+                    for subkey, subvalue in value.items():
+                        recurse(subkey, subvalue, result_key)
+
             for key in params.keys():
-                if key not in result:
-                    result[key] = json.dumps(params[key])
+                value = params[key]
+                recurse(key, value, '')
             return result
 
         futures = []
@@ -163,7 +173,7 @@ class Optimizer:
                     value = result[key]
                     if value is not "":
                         data['misc']['idxs']['root.' + key] = [resultIndex]
-                        data['misc']['vals']['root.' + key] = [json.loads(value)]
+                        data['misc']['vals']['root.' + key] = [value]
                     else:
                         data['misc']['idxs']['root.' + key] = []
                         data['misc']['vals']['root.' + key] = []

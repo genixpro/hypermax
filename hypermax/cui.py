@@ -373,18 +373,31 @@ def launchHypermaxUI(optimizer):
                 allResults = numpy.array([result['loss'] for result in optimizer.results])
                 allResults = [numpy.mean(allResults[max(0, index-10):min(len(allResults)-1, index+10)]) for index in range(0, len(allResults), 1)]
 
-                top = 0
+                top = None
+                bottom = None
                 data = []
                 for result in allResults[-min(len(allResults), 50):]:
                     data.append([result])
-                    top = max(top, result*1.1)
+                    if top is None or result > top:
+                        top = result
+                    if bottom is None or result < bottom:
+                        bottom = result
 
-                graph.set_data(data, top)
-
-                if top == 0:
+                if top is None:
                     top = 1
-                labels = [[i, '{:.3f}'.format(i)] for i in numpy.arange(0.0, top, top/100.0)]
-                graphVscale = urwid.AttrWrap(urwid.GraphVScale(labels=labels, top=top), 'graph_label')
+
+                if bottom is None:
+                    bottom = 0
+
+                if bottom == top:
+                    top = bottom + 1
+
+                graph_range = top - bottom
+
+                graph.set_data([[d[0] - bottom] for d in data], graph_range)
+
+                labels = [[i - bottom, '{:.3f}'.format(i)] for i in numpy.arange(bottom, top, graph_range/100.0)]
+                graphVscale = urwid.AttrWrap(urwid.GraphVScale(labels=labels, top=graph_range), 'graph_label')
                 graphColumns.contents[0] = (urwid.Padding(graphVscale, left=3, right=0), (urwid.GIVEN, 10, False))
                 graphColumns.contents[2] = (urwid.Padding(graphVscale, left=1, right=2), (urwid.GIVEN, 10, False))
 
