@@ -1,5 +1,6 @@
 import subprocess
 import json
+import atexit
 
 class Executor:
     def __init__(self, config):
@@ -13,9 +14,12 @@ class Executor:
             script += "import json\n"
             script += "result = " + self.config['name'] + "(" + json.dumps(parameters) + ")\n"
             script += "print(json.dumps(result))"
-            process = subprocess.run(['python3', '-c', script], stdout=subprocess.PIPE)
-            result = json.loads(process.stdout)
 
-            # print("Finished: ", parameters, "Loss: ", result['accuracy'])
-
-            return result
+            process = subprocess.Popen(['python3', '-c', script], stdout=subprocess.PIPE)
+            atexit.register(lambda: process.kill())
+            process.wait()
+            try:
+                result = json.load(process.stdout)
+                return result
+            except json.JSONDecodeError as e:
+                return {"status": "failed", "accuracy": 0}

@@ -33,7 +33,7 @@ class Optimizer:
         self.best = None
         self.bestLoss = None
 
-        self.thread = threading.Thread(target=lambda: self.optimizationThread())
+        self.thread = threading.Thread(target=lambda: self.optimizationThread(), daemon=True)
 
         self.totalTrials = 100
 
@@ -65,21 +65,22 @@ class Optimizer:
         jobs = self.config.data['function'].get('parallel', 4)
         samples = [self.sampleNext() for job in range(jobs)]
 
-        def testSample(params, trial=-1):
+        def testSample(params, trial):
             modelResult = self.executor.run(parameters=params)
 
             result = {}
-            # result['trial'] = trial
+            result['trial'] = trial
             result['loss'] = modelResult['accuracy']
             result['status'] = 'ok'
 
             for key in params.keys():
-                result[key] = json.dumps(params[key])
+                if key not in result:
+                    result[key] = json.dumps(params[key])
             return result
 
         futures = []
         for index, sample in enumerate(samples):
-            futures.append(self.threadExecutor.submit(testSample, sample, index))
+            futures.append(self.threadExecutor.submit(testSample, sample, len(self.results) + index))
 
         concurrent.futures.wait(futures)
 
@@ -101,9 +102,9 @@ class Optimizer:
 
     def convertTrialsToResults(self, trials):
         results = []
-        for trial in trials.trials:
+        for trialIndex, trial in enumerate(trials.trials):
             data = {
-                "trial": trial['tid'],
+                "trial": trialIndex,
                 "status": trial['result']['status'],
                 "loss": trial['result']['loss']
             }
@@ -153,12 +154,10 @@ class Optimizer:
         return trials
 
     def exportCSV(self, fileName):
-        results = self.convertTrialsToResults()
-
         with open(fileName, 'wt') as file:
-            writer = csv.DictWriter(file, fieldnames=results[0].keys(), dialect='unix')
+            writer = csv.DictWriter(file, fieldnames=self.results[0].keys(), dialect='unix')
             writer.writeheader()
-            writer.writerows(results)
+            writer.writerows(self.results)
 
     def importCSV(self, fileName):
         with open(fileName, 'rt') as file:
