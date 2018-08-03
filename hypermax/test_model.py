@@ -9,15 +9,15 @@ def trainModel(params):
 
     startTime = datetime.now()
 
-
-    # model = sklearn.ensemble.RandomForestClassifier(n_estimators=int(params['n_estimators']))
-    # model.fit(inputs, outputs)
-    # predicted = model.predict(inputs)
-
     targets = {
         "first_value": 383,
         "second_value": 862,
-        "third_value": 4
+        "third_value": 4,
+        "fourth_value": 670,
+        "fifth_value": 106,
+        "sixth_value": 42,
+        "seventh_value": 215,
+        "eighth_value": 921,
     }
 
     accuracy = 0
@@ -27,8 +27,6 @@ def trainModel(params):
         total += targets[key]
 
     finishTime = datetime.now()
-
-    # accuracy = sklearn.metrics.accuracy_score(outputs, predicted)
 
     return {"accuracy": accuracy/total, "time": (finishTime - startTime).total_seconds()}
 

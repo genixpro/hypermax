@@ -3,6 +3,40 @@ import urwid
 from pprint import pformat
 import numpy
 import sys
+from panwid import DataTable, DataTableColumn
+from hypermax.hyperparameter import Hyperparameter
+
+class ScrollableDataTable(DataTable):
+    def __init__(self, *args, **kwargs):
+        if 'keepColumns' in kwargs:
+            self.keepColumns = kwargs.get('keepColumns', []) + ['index']
+            del kwargs['keepColumns']
+        else:
+            self.keepColumns = ['index']
+
+        super(ScrollableDataTable, self).__init__(*args, **kwargs)
+
+        self.columnPos = 0
+
+    def keypress(self, widget, key):
+        if key == 'right':
+            if self.columnPos < len(self.columns):
+                self.columnPos += 1
+
+            self.hide_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index > self.columnPos])
+            self.show_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index <= self.columnPos])
+
+        elif key == 'left':
+            if self.columnPos > 0:
+                self.columnPos -= 1
+
+            self.hide_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index > self.columnPos])
+            self.show_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index <= self.columnPos])
+        else:
+            super(ScrollableDataTable, self).keypress(widget, key)
+
+        if key != 'up' or self.focus_position < 1:
+            return key
 
 def launchHypermaxUI(optimizer):
     screen = urwid.raw_display.Screen()
@@ -29,6 +63,28 @@ def launchHypermaxUI(optimizer):
         ('graph_bg', 'black', 'light gray'),
         ('graph_bar', 'black', 'dark cyan', 'bold'),
         ('graph_label', 'dark cyan', 'light gray', 'bold'),
+
+        ('table_row_body', 'dark gray', 'light gray', 'standout'),
+        ('table_row_header', 'dark gray', 'light gray', 'underline'),
+        ('table_row_footer', 'dark gray', 'light gray', 'standout'),
+
+        ('table_row_body focused', 'light gray', 'dark gray', 'standout'),
+        ('table_row_body column_focused', 'light gray', 'dark gray', 'standout'),
+        ('table_row_body highlight', 'light gray', 'dark gray', 'standout'),
+        ('table_row_body highlight focused', 'light gray', 'dark gray', 'standout'),
+        ('table_row_body highlight column_focused', 'light gray', 'dark gray', 'standout'),
+
+        ('table_row_header focused', 'light gray', 'dark gray', 'standout'),
+        ('table_row_header column_focused', 'light gray', 'dark gray', 'standout'),
+        ('table_row_header highlight', 'light gray', 'dark gray', 'standout'),
+        ('table_row_header highlight focused', 'light gray', 'dark gray', 'standout'),
+        ('table_row_header highlight column_focused', 'light gray', 'dark gray', 'standout'),
+
+        ('table_row_footer focused', 'light gray', 'dark gray', 'standout'),
+        ('table_row_footer column_focused', 'light gray', 'dark gray', 'standout'),
+        ('table_row_footer highlight', 'light gray', 'dark gray', 'standout'),
+        ('table_row_footer highlight focused', 'light gray', 'dark gray', 'standout'),
+        ('table_row_footer highlight column_focused', 'light gray', 'dark gray', 'standout'),
     ]
 
     def onRunAlgorithmClicked(widget):
@@ -79,10 +135,49 @@ def launchHypermaxUI(optimizer):
         status = urwid.Text(markup='')
         return makeMountedFrame(urwid.Filler(status), "Status")
 
-    trialsList = urwid.SimpleFocusListWalker([])
+    # trialsList = urwid.SimpleFocusListWalker([])
+    trialsTable = None
+    tableResultsSize = 0
     def makeTrialsView():
-        listbox = urwid.ListBox(trialsList)
-        return makeMountedFrame(listbox, 'Trials')
+        nonlocal trialsTable
+        # listbox = urwid.ListBox(trialsList)
+
+        columns = [
+            # DataTableColumn("uniqueid", width=10, align="right", padding=1),
+            DataTableColumn("trial",
+                            label="Trial",
+                            width=8,
+                            align="right",
+                            attr="body",
+                            padding=0
+                            # footer_fn=lambda column, values: sum(v for v in values if v is not None)),
+                            ),
+            DataTableColumn("loss",
+                            label="Loss",
+                            width=8,
+                            align="right",
+                            attr="body",
+                            padding=0,
+                            # footer_fn=lambda column, values: sum(v for v in values if v is not None)),
+                            )
+        ]
+
+        keys = Hyperparameter(optimizer.config.data['hyperparameters']).getFlatParameterNames()
+
+        for key in keys:
+            columns.append(
+            DataTableColumn(key[5:],
+                            label=key[5:],
+                            width=20,
+                            align="right",
+                            attr="body",
+                            padding=0
+                            # footer_fn=lambda column, values: sum(v for v in values if v is not None)),
+                            ))
+
+        trialsTable = ScrollableDataTable(columns=columns, data=[{}], keepColumns=['trial', 'loss'])
+
+        return makeMountedFrame(urwid.AttrWrap(trialsTable, 'body'), 'Trials')
 
     columns = urwid.Columns([makeMainMenu(), urwid.Filler(urwid.Text(''))])
 
@@ -135,12 +230,28 @@ def launchHypermaxUI(optimizer):
             statusText = "Completed: " + str(optimizer.completed()) + "/" + str(optimizer.totalTrials)
             status.set_text(statusText)
 
-            trialsToAdd = len(optimizer.results) - len(trialsList)
-            for result in optimizer.results[-trialsToAdd:]:
-                column = []
-                for key in result.keys():
-                    column.append(urwid.AttrWrap(urwid.Padding(urwid.Text(str(result[key]))), 'body'))
-                trialsList.append(urwid.Columns(column))
+            # trialsToAdd = len(optimizer.results) - len(trialsList)
+            # for result in optimizer.results[-trialsToAdd:]:
+            #     column = []
+            #     for key in result.keys():
+            #         column.append(urwid.AttrWrap(urwid.Padding(urwid.Text(str(result[key]))), 'body'))
+            #     trialsList.append(urwid.Columns(column))
+
+            if len(optimizer.results) > 0:
+                resultsToAdd = len(optimizer.results) - tableResultsSize
+                for result in optimizer.results[-resultsToAdd:]:
+                    newResult = {}
+                    for key in result.keys():
+                        if isinstance(result[key], float):
+                            if result[key] > 1e-3:
+                                newResult[key] = '{:.3F}'.format(result[key])
+                            else:
+                                newResult[key] = '{:.3E}'.format(result[key])
+                        else:
+                            newResult[key] = str(result[key])
+
+                    trialsTable.add_row(newResult)
+                    tableResultsSize += 1
 
             allResults = numpy.array([result['loss'] for result in optimizer.results])
 

@@ -64,3 +64,31 @@ class Hyperparameter:
                         return hp.qlognormal(name, math.log(mean), math.log(stddev), rounding)
                     else:
                         return hp.lognormal(name, math.log(mean), math.log(stddev))
+
+    def getFlatParameterNames(self):
+        name = self.root
+
+        if 'anyOf' in self.config or 'oneOf' in self.config:
+            keys = set()
+            if 'anyOf' in self.config:
+                data = self.config['anyOf']
+            else:
+                data = self.config['oneOf']
+                
+            for index, param in enumerate(data):
+                subKeys = Hyperparameter(param, name + "." + str(index)).getFlatParameterNames()
+                for key in subKeys:
+                    keys.add(key)
+
+            return keys
+        elif self.config['type'] == 'object':
+            keys = set()
+            for key in self.config['properties'].keys():
+                config = self.config['properties'][key]
+                subKeys = Hyperparameter(config, name + "." + key).getFlatParameterNames()
+                for key in subKeys:
+                    keys.add(key)
+
+            return keys
+        elif self.config['type'] == 'number':
+            return [name]

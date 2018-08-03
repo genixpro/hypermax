@@ -65,11 +65,11 @@ class Optimizer:
         jobs = self.config.data['function'].get('parallel', 4)
         samples = [self.sampleNext() for job in range(jobs)]
 
-        def testSample(params, trial=-1):
+        def testSample(params, trial):
             modelResult = self.executor.run(parameters=params)
 
             result = {}
-            # result['trial'] = trial
+            result['trial'] = trial
             result['loss'] = modelResult['accuracy']
             result['status'] = 'ok'
 
