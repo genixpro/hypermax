@@ -7,6 +7,7 @@ class Executor:
 
 
     def run(self, parameters):
+        # print("Running: ", parameters)
         if self.config['type'] == 'python_function':
             script = "from " + self.config['module'] + " import " + self.config['name'] + "\n"
             script += "import json\n"
@@ -15,6 +16,6 @@ class Executor:
             process = subprocess.run(['python3', '-c', script], stdout=subprocess.PIPE)
             result = json.loads(process.stdout)
 
-            print("Running: ", parameters, "Loss: ", result['accuracy'])
+            print("Finished: ", parameters, "Loss: ", result['accuracy'])
 
-            return result['accuracy']
+            return result

@@ -6,40 +6,95 @@ import datetime
 import time
 import numpy.random
 import random
+import concurrent.futures
+import functools
 from hypermax.configuration import Configuration
 
 
 class Optimizer:
-    def __init__(self, configuration):
-        self.config = Configuration(configuration)
-
-        self.space = self.config.createHyperparameterSpace()
-        self.executor = self.config.createExecutor()
-
-        self.trials = hyperopt.Trials()
-
-    def runOptimization(self):
-        best = None
-        for n in range(1):
-            rstate = numpy.random.RandomState(seed=int(random.randint(1, 2**32-1)))
-            best = hyperopt.fmin(fn=lambda params: self.executor.run(params),
-                                 space=self.space,
-                                 algo=hyperopt.tpe.suggest,
-                                 max_evals=100,
-                                 trials=self.trials,
-                                 rstate=rstate)
-            self.exportCSV('results.csv')
-            self.importCSV('results.csv')
-
     resultInformationKeys = [
         'trial',
         'status',
         'loss'
     ]
 
-    def convertTrialsToResults(self):
+    def __init__(self, configuration):
+        self.config = Configuration(configuration)
+
+        self.space = self.config.createHyperparameterSpace()
+        self.executor = self.config.createExecutor()
+
+        self.threadExecutor = concurrent.futures.ThreadPoolExecutor()
+
+        self.results = []
+
+        self.best = None
+        self.bestLoss = None
+
+    def __del__(self):
+        self.threadExecutor.shutdown(wait=True)
+
+    def sampleNext(self):
+        rstate = numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))
+        params = {}
+
+        def sample(parameters):
+            nonlocal params
+            params = parameters
+            return {"loss": 0, 'status': 'ok'}
+
+        hyperopt.fmin(fn=sample,
+                      space=self.space,
+                      algo=functools.partial(hyperopt.tpe.suggest, n_EI_candidates=24, gamma=0.25),
+                      max_evals=1,
+                      trials=self.convertResultsToTrials(self.results),
+                      rstate=rstate)
+
+        return params
+
+    def runOptimizationRound(self):
+        jobs = self.config.data['function'].get('parallel', 4)
+        samples = [self.sampleNext() for job in range(jobs)]
+
+        def testSample(params, trial=-1):
+            modelResult = self.executor.run(parameters=params)
+
+            result = {}
+            # result['trial'] = trial
+            result['loss'] = modelResult['accuracy']
+            result['status'] = 'ok'
+
+            for key in params.keys():
+                result[key] = json.dumps(params[key])
+            return result
+
+        futures = []
+        for index, sample in enumerate(samples):
+            futures.append(self.threadExecutor.submit(testSample, sample, index))
+
+        concurrent.futures.wait(futures)
+
+        results = [future.result() for future in futures]
+
+        for result in results:
+            if self.best is None or result['loss'] < self.bestLoss:
+                self.bestLoss = result['loss']
+                self.best = result
+
+        self.results = self.results + results
+
+    def runOptimization(self):
+        count = 0
+        while count < 10000:
+            self.runOptimizationRound()
+            count += 1
+
+            if self.best['loss'] < 0.2:
+                break
+
+    def convertTrialsToResults(self, trials):
         results = []
-        for trial in self.trials.trials:
+        for trial in trials.trials:
             data = {
                 "trial": trial['tid'],
                 "status": trial['result']['status'],
@@ -57,7 +112,7 @@ class Optimizer:
         return results
 
     def convertResultsToTrials(self, results):
-        self.trials = hyperopt.Trials()
+        trials = hyperopt.Trials()
 
         for resultIndex, result in enumerate(results):
             data = {
@@ -87,7 +142,8 @@ class Optimizer:
                         data['misc']['idxs']['root.' + key] = []
                         data['misc']['vals']['root.' + key] = []
 
-            self.trials.insert_trial_doc(data)
+            trials.insert_trial_doc(data)
+        return trials
 
     def exportCSV(self, fileName):
         results = self.convertTrialsToResults()
