@@ -133,11 +133,146 @@ And now you can run your hyper-parameter search
         -- Launching --
     ...  
  
-Hypermax will automatically construct a loss function which optimizes your metrics, based on the bounds and targets that you provide. It will then
-begin the hyper parameter search.
+Hypermax will automatically construct a loss function which optimizes your metrics, based on the bounds and targets
+that you provide. It will then begin the hyper parameter search.
 
 
 # Detailed Configuration
+
+
+## Model Execution
+
+There are several different ways of executing your model.
+
+### Python Functions
+
+The most straight forward way to execute your model is by defining a Python function. To do this, simply provide the 
+name of the module and the name of the function in the "module" and "name" functions, like so:
+
+    {
+        "function": {
+            "type": "python_function",
+            "module": "model",
+            "name": "trainModel"
+        }
+    }
+
+Remember that you do not include the extension of the name of your module, there is no ".py" on it. The module is
+referenced using Pythons standard system. This means that you can directly reference any files in the current working
+directory simply by their file-name. Alternatively, you can reference a system-package or a Python package that is
+setup elsewhere. As long as this works:
+
+    $ python3
+    
+    Python 3.6.5 (default, Mar 29 2018, 18:20:46) 
+    [GCC 8.0.1 20180317 (Red Hat 8.0.1-0.19)] on linux
+    Type "help", "copyright", "credits" or "license" for more information.
+    >>> import module_name
+    >>> module.foobar()
+    
+Then this will to:
+
+    {
+        "function": {
+            "type": "python_function",
+            "module": "module_name",
+            "name": "foobar"
+        }
+    }
+
+### Format of the result
+
+The results can be provided in one of two formats. The simplest is to just return the loss directly as a single floating point value
+from your cost function, or print it to standard output in your executable. For example:
+
+    def trainModel(parameters):
+        # Do some fany stuff
+        loss = 1.0
+        return loss
+
+or as an executable:
+
+    #!/usr/bin/python3
+
+    # Do some fany stuff
+    loss = 1.0
+    print(loss)
+
+If you are using multiple losses though, you will have to return each of them as part of a JSON object. For example:
+
+    def trainModel(parameters):
+        # Do some fany stuff
+        accuracy = 0.9
+        stddev = 0.1
+        return {"accuracy": accuracy, "stddev": stddev}
+
+or as an executable:
+
+    #!/usr/bin/python3
+
+    import json
+
+    # Do some fany stuff
+    accuracy = 0.9
+    stddev = 0.1
+    print(json.dumps({"accuracy": accuracy, "stddev": stddev}))
+
+If you want to store additional metadata with your model, you can. Any fields that are unrecognized for any other purpose will be automatically considered as metadata.
+
+    def trainModel(parameters):
+        # Do some fany stuff
+        loss = 1.0
+        additional_statistic = 42.0
+        return {"loss": loss, "additional_statistic": additional_statistic}
+
+The time your model takes is automatically measured by Hypermax (time can be used for punishing your model for taking too long, see Losses section).
+However, you may only care about the execution / run-time of your model, and not about the training time. In these cases, you can return "time" as
+an additional variable.
+
+    def trainModel(parameters):
+        # Do some fany stuff
+        model = Model()
+        model.train()
+        start = datetime.now()
+        loss = model.test()
+        end = datetime.now()
+        return {"loss": loss, "time": (end-start).total_seconds()}
+
+It should be noted that this time is not the same time used for auto_kill purposes. This is the time that will be showed in the UI and considered for optimization
+purposes.
+
+### Automatically killing models due to running time or RAM usage
+
+Sometimes, your models may be behaving very poorly in certain parts of your hyper-parameter space. It is thus possible,
+and indeed recommended, to set add limits on how long your model can be running for and how much RAM it can use. This
+prevents your optimization routine from getting hung due to a model that takes too long to train, or crashing entirely
+because it uses too much RAM.
+
+To do this, simply add in a auto_kill_max_time, auto_kill_max_ram, or auto_kill_max_system_ram option, and set a 
+a kill_loss variable to indicate what the loss should be for models which are killed.
+
+auto_kill_max_time is specified in seconds. auto_kill_max_ram and auto_kill_max_system_ram are both specified in
+megabytes, the kind which are based by 1024 (not 1000).
+
+auto_kill_max_ram only measures the RAM of the model process. However, if your cost-function has other various
+sub-processes which take up RAM, these will not be counted. Therefore, you can use auto_kill_max_system_ram in
+these cases to prevent total system RAM usage from creeping too high (the assumption being your model is what is
+taking up the systems RAM). You are able to provide both at the same time (if you want to).
+
+auto_kill_loss is just a floating point indicating the total loss that should be given to the optimizer when the model
+is killed. This helps teach the optimizer to avoid hyper-parameters which lead to models being killed.
+
+    {
+        "function": {
+            "type": "python_function",
+            "module": "model",
+            "name": "trainModel",
+            "auto_kill_max_time": 120.0,
+            "auto_kill_max_ram": 512,
+            "auto_kill_max_system_ram": 3800,
+            "auto_kill_loss": 1.0
+        }
+    }
 
 ## Loss / Cost Functions
 

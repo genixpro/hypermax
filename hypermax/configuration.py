@@ -1,5 +1,4 @@
 from hypermax.hyperparameter import  Hyperparameter
-from hypermax.executor import  Executor
 
 
 class Configuration:
@@ -14,15 +13,4 @@ class Configuration:
         space = param.createHyperoptSpace()
 
         return space
-
-
-
-    def createExecutor(self):
-        executor = Executor(self.data['function'])
-
-        return executor
-
-
-
-
 

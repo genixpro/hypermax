@@ -10,6 +10,7 @@ import queue
 import random
 import concurrent.futures
 import functools
+from hypermax.execution import Execution
 from hypermax.hyperparameter import Hyperparameter
 import sklearn.covariance
 
@@ -22,14 +23,14 @@ class Optimizer:
         'status',
         'loss',
         'time',
-        'log'
+        'log',
+        'error'
     ]
 
     def __init__(self, configuration):
         self.config = Configuration(configuration)
 
         self.space = self.config.createHyperparameterSpace()
-        self.executor = self.config.createExecutor()
 
         self.threadExecutor = concurrent.futures.ThreadPoolExecutor()
 
@@ -72,7 +73,8 @@ class Optimizer:
 
         def testSample(params, trial):
             start = datetime.datetime.now()
-            modelResult = self.executor.run(parameters=params)
+            execution = Execution(self.config.data['function'], parameters=params)
+            modelResult = execution.run()
             end = datetime.datetime.now()
 
             result = {}
@@ -93,7 +95,15 @@ class Optimizer:
             else:
                 result['log'] = ''
 
-            result['time'] = (end-start).total_seconds()
+            if 'error' in modelResult:
+                result['error'] = modelResult['error']
+            else:
+                result['error'] = ''
+
+            if 'time' in modelResult:
+                result['time'] = modelResult['time']
+            else:
+                result['time'] = (end-start).total_seconds()
 
             def recurse(key, value, root):
                 result_key = root + "." + key
@@ -119,7 +129,7 @@ class Optimizer:
         results = [future.result() for future in futures]
 
         for result in results:
-            if self.best is None or result['loss'] < self.bestLoss:
+            if self.best is None or (result['loss'] is not None and result['loss'] < self.bestLoss):
                 self.bestLoss = result['loss']
                 self.best = result
 

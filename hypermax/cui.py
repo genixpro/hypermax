@@ -413,7 +413,7 @@ def launchHypermaxUI(optimizer):
             if optimizer.best:
                 paramKeys = [key for key in optimizer.best.keys() if key not in optimizer.resultInformationKeys]
 
-                cutoff = int(len(paramKeys)/2)
+                cutoff = int(len(paramKeys)/2)+1
                 leftParamKeys = paramKeys[:cutoff]
                 rightParamKeys = paramKeys[cutoff:]
 
