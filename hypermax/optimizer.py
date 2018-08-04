@@ -40,7 +40,7 @@ class Optimizer:
 
         self.thread = threading.Thread(target=lambda: self.optimizationThread(), daemon=True)
 
-        self.totalTrials = 100
+        self.totalTrials = 1000
 
     def __del__(self):
         self.threadExecutor.shutdown(wait=True)
