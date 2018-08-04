@@ -199,6 +199,9 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
     - Automatic uploading of results to Google Drive
 - Model Execution
     - Autokill long-running models
+    - Autokill models that take too much RAM (or GPU RAM)
+    - Autokill models that take too much Disk / Network (not sure about this one)
+    - Fix bug related to using too many file handlers.
     - Automatically keep logs / errors for models executing
     - Execute model as an executable
     - Execute model as a python function
@@ -208,6 +211,7 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
     - Rsync a folder prior to remote execution
     - Can attach additional arbitrary metadata to your model results
     - Able to have "speed-tests" on models, where your hyper-parameters are tested on a reduced dataset in order to measure the speed. Useful to eliminate bad hyper-parameters without executing the full model.
+    - Similarly, able to run "memory tests" on models, ensuring your hyper-parameters don't lead to excessive ram usage
     - Able to automatically run additional cross-folds on your best-models, to ensure they aren't statistical flukes
     - Hyper-parameters with rounding set to 1 should be automatically converted to integer
 - Configuration:
@@ -245,6 +249,10 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
     - Fix the bug where the UI doesn't automatically resize when terminal resizes
     - Access the UI through a web-browser
     - Password-protection on web-browser UI
+    - Able to monitor the RAM (and GPU RAM) usage of currently executing models
+    - Able to monitor the disk usage of currently executing models
+    - Able to monitor the network usage of currently executing models
+    - Able to monitor general system stats, such as CPU, network, disk, and ram
 - Losses:
     - Able to have multiple weighted loss functions
     - Automatically pass loss-function through math-function based on min,max,target to add in asymptotes at target values
@@ -252,6 +260,8 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
     - Convenient way to add Time as an additional loss on your model
     - Time computed automatically, but can be overridden if provided in results
     - Can view all the losses for a given model in the UI, not just final loss
+    - Convenient way to add in peak or median RAM (and GPU RAM) as an additional loss on your model
+    - Convenient way to add in disk / network usage as a additional loss on your model
 - Tools for Hyperparameter Tuning:
     - View a hotspot grid between two hyper-parameters, to see the sensitive areas
     - Improve feature-vector design for hyper-parameter correlations
