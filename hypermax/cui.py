@@ -6,6 +6,7 @@ import sys
 import os.path
 import csv
 import yaml
+import json
 from panwid import DataTable, DataTableColumn
 from hypermax.hyperparameter import Hyperparameter
 
@@ -52,7 +53,7 @@ class ScrollableDataTable(DataTable):
         if key != 'up' or self.focus_position < 1:
             return key
 
-class ExportFilePopup(urwid.WidgetWrap):
+class ExportCSVPopup(urwid.WidgetWrap):
     signals = ['close']
 
     """A dialog that appears with nothing but a close button """
@@ -68,13 +69,43 @@ class ExportFilePopup(urwid.WidgetWrap):
 
         pile = urwid.Pile([header, urwid.Text('\n'), self.edit,urwid.Text(''), urwid.Columns([save_button, close_button])])
         fill = urwid.Filler(pile)
-        super(ExportFilePopup, self).__init__(makeMountedFrame(fill, 'Export File'))
+        super(ExportCSVPopup, self).__init__(makeMountedFrame(fill, 'Export File'))
 
         self.optimizer = optimizer
 
     def saveResults(self):
         self.optimizer.exportCSV(self.edit.edit_text)
         self._emit('close')
+
+
+class ExportParametersPopup(urwid.WidgetWrap):
+    signals = ['close']
+
+    """A dialog that appears with nothing but a close button """
+    def __init__(self, optimizer):
+        header = urwid.Text("Where would you like to save?")
+
+        self.edit = urwid.Edit(edit_text=os.path.join(os.getcwd(), "parameters.json"))
+
+        save_button = urwid.Button("Save")
+        close_button = urwid.Button("Cancel")
+        urwid.connect_signal(close_button, 'click',lambda button: self._emit("close"))
+        urwid.connect_signal(save_button, 'click',lambda button: self.saveResults())
+
+        pile = urwid.Pile([header, urwid.Text('\n'), self.edit,urwid.Text(''), urwid.Columns([save_button, close_button])])
+        fill = urwid.Filler(pile)
+        super(ExportParametersPopup, self).__init__(makeMountedFrame(fill, 'Export File'))
+
+        self.optimizer = optimizer
+
+    def saveResults(self):
+        paramKeys = [key for key in self.optimizer.best.keys() if key not in self.optimizer.resultInformationKeys]
+
+        with open(self.edit.edit_text, 'wt') as file:
+            json.dump({key:self.optimizer.best[key] for key in paramKeys}, file, indent=4)
+
+        self._emit('close')
+
 
 class CorrelationGridPopup(urwid.WidgetWrap):
     signals = ['close']
@@ -113,7 +144,7 @@ class CorrelationGridPopup(urwid.WidgetWrap):
 
         buttons = urwid.Filler(urwid.Columns([close_button, export_button]))
 
-        super(CorrelationGridPopup, self).__init__(makeMountedFrame(urwid.Pile([table, buttons]), 'Export File'))
+        super(CorrelationGridPopup, self).__init__(makeMountedFrame(urwid.Pile([table, (5, buttons)]), 'Export File'))
 
         self.optimizer = optimizer
 
@@ -215,6 +246,11 @@ def launchHypermaxUI(optimizer):
         else:
             popupContainer.open_pop_up_with_widget(MessagePopup('No results to compute correlation on yet.'), size=(('relative', 95), ('relative', 95)))
 
+    def exportBestParameters():
+        if optimizer.best:
+            popupContainer.open_pop_up_with_widget(ExportParametersPopup(optimizer))
+        else:
+            popupContainer.open_pop_up_with_widget(MessagePopup('There is no best model to export yes.'), size=(('relative', 95), ('relative', 95)))
 
     popupContainer = None
     graph = None
@@ -225,8 +261,9 @@ def launchHypermaxUI(optimizer):
     currentBestRight = None
     def makeMainMenu():
         content = [
-            urwid.AttrWrap(urwid.Button("Export Results to CSV", on_press=lambda button: popupContainer.open_pop_up_with_widget(ExportFilePopup(optimizer))), 'body', focus_attr='focus'),
+            urwid.AttrWrap(urwid.Button("Export Results to CSV", on_press=lambda button: popupContainer.open_pop_up_with_widget(ExportCSVPopup(optimizer))), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('View Hyperparameter Correlations', on_press=lambda button: viewHyperparameterCorrelations()), 'body', focus_attr='focus'),
+            urwid.AttrWrap(urwid.Button('Export Best Hyperparameters to File', on_press=lambda button: exportBestParameters()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('Exit', on_press=onExitClicked), 'body', focus_attr='focus')
         ]
 
