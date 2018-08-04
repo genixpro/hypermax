@@ -5,12 +5,14 @@ import numpy
 import sys
 import os.path
 import csv
+import yaml
 from panwid import DataTable, DataTableColumn
 from hypermax.hyperparameter import Hyperparameter
 
 
 def makeMountedFrame(widget, header):
-    body = urwid.Frame(urwid.AttrWrap(widget, 'frame_body'), urwid.AttrWrap(urwid.Text('  ' + header), 'frame_header'))
+    content = urwid.Padding(urwid.Filler(widget, height=('relative', 100), top=1, bottom=1), left=1, right=1)
+    body = urwid.Frame(urwid.AttrWrap(content, 'frame_body'), urwid.AttrWrap(urwid.Text('  ' + header), 'frame_header'))
     shadow = urwid.Columns(
         [body, ('fixed', 2, urwid.AttrWrap(urwid.Filler(urwid.Text(('background', '  ')), "top"), 'shadow'))])
     shadow = urwid.Frame(shadow, footer=urwid.AttrWrap(urwid.Text(('background', '  ')), 'shadow'))
@@ -32,18 +34,18 @@ class ScrollableDataTable(DataTable):
 
     def keypress(self, widget, key):
         if key == 'right':
-            if self.columnPos < len(self.columns):
+            if self.columnPos < len([c for c in self.columns if c.name not in self.keepColumns])-1:
                 self.columnPos += 1
 
-            self.hide_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index > self.columnPos])
-            self.show_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index <= self.columnPos])
+            self.toggle_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index >= self.columnPos], show=False)
+            self.toggle_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index < self.columnPos], show=True)
 
         elif key == 'left':
             if self.columnPos > 0:
                 self.columnPos -= 1
 
-            self.hide_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index > self.columnPos])
-            self.show_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index <= self.columnPos])
+            self.toggle_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index >= self.columnPos], show=False)
+            self.toggle_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index < self.columnPos], show=True)
         else:
             super(ScrollableDataTable, self).keypress(widget, key)
 
@@ -74,13 +76,13 @@ class ExportFilePopup(urwid.WidgetWrap):
         self.optimizer.exportCSV(self.edit.edit_text)
         self._emit('close')
 
-class CovarianceGridPopup(urwid.WidgetWrap):
+class CorrelationGridPopup(urwid.WidgetWrap):
     signals = ['close']
 
     """A dialog that appears with nothing but a close button """
     def __init__(self, optimizer):
 
-        matrix, labels = optimizer.computeCovariances()
+        matrix, labels = optimizer.computeCorrelations()
 
         columns = [DataTableColumn('field', label='field', width=16, align="right", attr="body", padding=0)]
         for label in labels:
@@ -107,18 +109,18 @@ class CovarianceGridPopup(urwid.WidgetWrap):
         urwid.connect_signal(close_button, 'click',lambda button: self._emit("close"))
 
         export_button = urwid.Button("Export")
-        urwid.connect_signal(export_button, 'click',lambda button: self.exportCovariances())
+        urwid.connect_signal(export_button, 'click',lambda button: self.exportCorrelations())
 
         buttons = urwid.Filler(urwid.Columns([close_button, export_button]))
 
-        super(CovarianceGridPopup, self).__init__(makeMountedFrame(urwid.Pile([table, buttons]), 'Export File'))
+        super(CorrelationGridPopup, self).__init__(makeMountedFrame(urwid.Pile([table, buttons]), 'Export File'))
 
         self.optimizer = optimizer
 
-    def exportCovariances(self):
+    def exportCorrelations(self):
         self._emit('close')
 
-        with open('covariances.csv', 'wt') as file:
+        with open('correlations.csv', 'wt') as file:
             writer = csv.DictWriter(file, fieldnames=['field'] + self.labels)
             writer.writerows(self.data)
 
@@ -163,7 +165,7 @@ def launchHypermaxUI(optimizer):
         ('body', 'dark gray', 'light gray', 'standout'),
         ('frame_header', 'white', 'dark gray', 'standout'),
         ('frame_shadow', 'black', 'black', 'standout'),
-        ('frame_body', 'black', 'light gray', 'standout'),
+        ('frame_body', 'dark gray', 'light gray', 'standout'),
         ('tab_buttons', 'white', 'dark red', 'standout'),
 
         ('focus', 'black', 'light gray', 'underline'),
@@ -207,11 +209,11 @@ def launchHypermaxUI(optimizer):
     def onExitClicked(widget):
         raise urwid.ExitMainLoop()
 
-    def viewHyperparameterCovariances():
+    def viewHyperparameterCorrelations():
         if optimizer.results:
-            popupContainer.open_pop_up_with_widget(CovarianceGridPopup(optimizer), size=(('relative', 95), ('relative', 95)))
+            popupContainer.open_pop_up_with_widget(CorrelationGridPopup(optimizer), size=(('relative', 95), ('relative', 95)))
         else:
-            popupContainer.open_pop_up_with_widget(MessagePopup('No results to compute covariance on yet.'), size=(('relative', 95), ('relative', 95)))
+            popupContainer.open_pop_up_with_widget(MessagePopup('No results to compute correlation on yet.'), size=(('relative', 95), ('relative', 95)))
 
 
     popupContainer = None
@@ -219,10 +221,12 @@ def launchHypermaxUI(optimizer):
     graphVscale = None
     graphColumns = None
     status = None
+    currentBestLeft = None
+    currentBestRight = None
     def makeMainMenu():
         content = [
             urwid.AttrWrap(urwid.Button("Export Results to CSV", on_press=lambda button: popupContainer.open_pop_up_with_widget(ExportFilePopup(optimizer))), 'body', focus_attr='focus'),
-            urwid.AttrWrap(urwid.Button('View Hyperparameter Covariances', on_press=lambda button: viewHyperparameterCovariances()), 'body', focus_attr='focus'),
+            urwid.AttrWrap(urwid.Button('View Hyperparameter Correlations', on_press=lambda button: viewHyperparameterCorrelations()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('Exit', on_press=onExitClicked), 'body', focus_attr='focus')
         ]
 
@@ -239,15 +243,22 @@ def launchHypermaxUI(optimizer):
 
         labels = [[i, '{:.3f}'.format(i)] for i in numpy.arange(0.0, 1.0, 0.01)]
         graphVscale = urwid.AttrWrap(urwid.GraphVScale(labels=labels, top=1), 'graph_label')
-        graphColumns = urwid.Columns([(10, urwid.Padding(graphVscale, left=3, right=0)), graph, (10, urwid.Padding(graphVscale, left=1, right=2))])
+        graphColumns = urwid.Columns([(7, urwid.Padding(graphVscale, left=0, right=1)), graph, (7, urwid.Padding(graphVscale, left=1, right=0))])
 
         graphFrame = makeMountedFrame(graphColumns, 'Rolling Loss')
         return graphFrame
 
     def makeStatusArea():
         nonlocal status
-        status = urwid.Text(markup='')
+        status = urwid.AttrWrap(urwid.Text(markup=''), 'body')
         return makeMountedFrame(urwid.Filler(status), "Status")
+
+    def makeCurrentBestArea():
+        nonlocal currentBestLeft, currentBestRight
+        currentBestLeft = urwid.Text(markup='')
+        currentBestRight = urwid.Text(markup='')
+        columns = urwid.Columns([currentBestLeft, (1, urwid.Text(markup=' ')), currentBestRight])
+        return makeMountedFrame(urwid.AttrWrap(urwid.Filler(columns), 'frame_body'), "Current Best")
 
     # trialsList = urwid.SimpleFocusListWalker([])
     trialsTable = None
@@ -260,7 +271,7 @@ def launchHypermaxUI(optimizer):
             # DataTableColumn("uniqueid", width=10, align="right", padding=1),
             DataTableColumn("trial",
                             label="Trial",
-                            width=8,
+                            width=6,
                             align="right",
                             attr="body",
                             padding=0
@@ -268,33 +279,42 @@ def launchHypermaxUI(optimizer):
                             ),
             DataTableColumn("loss",
                             label="Loss",
-                            width=8,
+                            width=10,
                             align="right",
                             attr="body",
                             padding=0,
                             # footer_fn=lambda column, values: sum(v for v in values if v is not None)),
-                            )
+                            ),
+            DataTableColumn("time",
+                            label="Time",
+                            width=6,
+                            align="right",
+                            attr="body",
+                            padding=0
+                            # footer_fn=lambda column, values: sum(v for v in values if v is not None)),
+                            ),
         ]
 
         keys = Hyperparameter(optimizer.config.data['hyperparameters']).getFlatParameterNames()
 
-        for key in keys:
+        for key in sorted(keys):
             columns.append(
             DataTableColumn(key[5:],
                             label=key[5:],
-                            width=20,
+                            width=len(key[5:])+2,
                             align="right",
                             attr="body",
                             padding=0
                             # footer_fn=lambda column, values: sum(v for v in values if v is not None)),
                             ))
 
-        trialsTable = ScrollableDataTable(columns=columns, data=[{}], keepColumns=['trial', 'loss'])
+        trialsTable = ScrollableDataTable(columns=columns, data=[{}], keepColumns=['trial', 'loss', 'time'])
 
         return makeMountedFrame(urwid.AttrWrap(trialsTable, 'body'), 'Trials')
 
-    columns = urwid.Columns([makeMainMenu(), urwid.Filler(urwid.Text(''))])
+    currentBestArea = makeCurrentBestArea()
 
+    columns = urwid.Columns([makeMainMenu(), currentBestArea])
 
     statusArea = makeStatusArea()
     graphArea = makeGraphArea()
@@ -347,6 +367,28 @@ def launchHypermaxUI(optimizer):
             statusText = "Completed: " + str(optimizer.completed()) + "/" + str(optimizer.totalTrials)
             status.set_text(statusText)
 
+            def formatParamVal(value):
+                if isinstance(value, float):
+                    return float('{:.4E}'.format(value))
+                else:
+                    return value
+
+            if optimizer.best:
+                paramKeys = [key for key in optimizer.best.keys() if key not in optimizer.resultInformationKeys]
+
+                cutoff = int(len(paramKeys)/2)
+                leftParamKeys = paramKeys[:cutoff]
+                rightParamKeys = paramKeys[cutoff:]
+
+                bestLeftText = yaml.dump({key:formatParamVal(optimizer.best[key]) for key in leftParamKeys}, default_flow_style=False)
+                bestRightText = yaml.dump({key:formatParamVal(optimizer.best[key]) for key in rightParamKeys}, default_flow_style=False)
+
+                bestLeftText += "\n\nLoss: " + str(optimizer.bestLoss)
+                bestRightText += "\n\nTime: " + str(optimizer.best['time']) + " (s)"
+
+                currentBestLeft.set_text(bestLeftText)
+                currentBestRight.set_text(bestRightText)
+
             if len(optimizer.results) > 0:
                 numResultsToAdd = max(0, len(optimizer.results) - tableResultsSize)
                 if numResultsToAdd > 0:
@@ -369,9 +411,12 @@ def launchHypermaxUI(optimizer):
                     trialsTable.apply_filters()
                     tableResultsSize += len(resultsToAdd)
 
-            if len(optimizer.results) > 3:
+            if len(optimizer.results) > 1:
                 allResults = numpy.array([result['loss'] for result in optimizer.results])
-                allResults = [numpy.mean(allResults[max(0, index-10):min(len(allResults)-1, index+10)]) for index in range(0, len(allResults), 1)]
+
+                windowSize = max(0, min(10, len(allResults)-10))
+
+                allResults = [numpy.median(allResults[max(0, index-windowSize):index+1]) for index in range(0, len(allResults), 1)]
 
                 top = None
                 bottom = None
@@ -389,7 +434,7 @@ def launchHypermaxUI(optimizer):
                 if bottom is None:
                     bottom = 0
 
-                if bottom == top:
+                if '{:.3E}'.format(bottom) == '{:.3E}'.format(top):
                     top = bottom + 1
 
                 graph_range = top - bottom
@@ -398,8 +443,8 @@ def launchHypermaxUI(optimizer):
 
                 labels = [[i - bottom, '{:.3f}'.format(i)] for i in numpy.arange(bottom, top, graph_range/100.0)]
                 graphVscale = urwid.AttrWrap(urwid.GraphVScale(labels=labels, top=graph_range), 'graph_label')
-                graphColumns.contents[0] = (urwid.Padding(graphVscale, left=3, right=0), (urwid.GIVEN, 10, False))
-                graphColumns.contents[2] = (urwid.Padding(graphVscale, left=1, right=2), (urwid.GIVEN, 10, False))
+                graphColumns.contents[0] = (urwid.Padding(graphVscale, left=0, right=1), (urwid.GIVEN, 7, False))
+                graphColumns.contents[2] = (urwid.Padding(graphVscale, left=1, right=0), (urwid.GIVEN, 7, False))
 
             if len(optimizer.results) > 0:
                 if optimizer.results[-1]['status'] != 'ok':

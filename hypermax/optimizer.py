@@ -21,6 +21,7 @@ class Optimizer:
         'trial',
         'status',
         'loss',
+        'time',
         'log'
     ]
 
@@ -70,7 +71,9 @@ class Optimizer:
         samples = [self.sampleNext() for job in range(jobs)]
 
         def testSample(params, trial):
+            start = datetime.datetime.now()
             modelResult = self.executor.run(parameters=params)
+            end = datetime.datetime.now()
 
             result = {}
             result['trial'] = trial
@@ -89,6 +92,8 @@ class Optimizer:
                 result['log'] = modelResult['log']
             else:
                 result['log'] = ''
+
+            result['time'] = (end-start).total_seconds()
 
             def recurse(key, value, root):
                 result_key = root + "." + key
@@ -134,7 +139,8 @@ class Optimizer:
                 "trial": trialIndex,
                 "status": trial['result']['status'],
                 "loss": trial['result']['loss'],
-                "log": ""
+                "log": "",
+                "time": abs((trial['book_time'] - trial['refresh_time']).total_seconds())
             }
 
             params = trial['misc']['vals']
@@ -193,7 +199,7 @@ class Optimizer:
             rows = list(reader)
         self.convertResultsToTrials(rows)
 
-    def computeCovariances(self):
+    def computeCorrelations(self):
         inputs = []
 
         keys = Hyperparameter(self.config.data['hyperparameters']).getFlatParameterNames()
@@ -206,7 +212,7 @@ class Optimizer:
 
         for result in self.results:
             for key in keys:
-                value = json.loads(result[key[5:]])
+                value = result[key[5:]]
                 values[key].add(value)
                 types[key].add(type(value).__name__)
 
@@ -217,7 +223,7 @@ class Optimizer:
             vector = []
             vectorLabels = []
             for key in keys:
-                value = json.loads(result[key[5:]])
+                value = result[key[5:]]
                 if 'bool' in types[key] or 'int' in types[key] or 'float' in types[key]:
                     if isinstance(value, int) or isinstance(value, float) or isinstance(value, bool):
                         vector.append(float(value))
@@ -254,10 +260,16 @@ class Optimizer:
         model = sklearn.covariance.LedoitWolf()
         model.fit(numpy.array(vectors), numpy.array(outputs))
 
-        normalized = sklearn.preprocessing.normalize(model.covariance_)
-        # normalized = model.covariance_
+        covariances = model.covariance_
+        correlations = numpy.zeros_like(covariances)
 
-        return normalized, labels
+        deviations = numpy.std(vectors, axis=0)
+
+        for label1Index in range(len(labels)):
+            for label2Index in range(len(labels)):
+                correlations[label1Index][label2Index] = covariances[label1Index][label2Index] / (deviations[label1Index] * deviations[label2Index])
+
+        return correlations, labels
 
 
 
