@@ -45,6 +45,7 @@ class Optimizer:
 
         self.totalTrials = 1000
         self.trialsSinceDetailedResults = 0
+        self.resultsFuture = None
 
     def __del__(self):
         self.threadExecutor.shutdown(wait=True)
@@ -140,9 +141,8 @@ class Optimizer:
 
         self.trialsSinceDetailedResults += len(results)
 
-        if self.trialsSinceDetailedResults >= 50:
-            self.resultsAnalyzer.outputResultsFolder(self, True)
-            self.trialsSinceDetailedResults = 0
+        if self.resultsFuture is None or self.resultsFuture.done():
+            self.resultsFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
         else:
             self.resultsAnalyzer.outputResultsFolder(self, False)
 

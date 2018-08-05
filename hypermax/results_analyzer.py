@@ -142,7 +142,7 @@ class ResultsAnalyzer:
             # We use concurrent.futures.ProcessThreadPool here for two reasons. One for speed (since generating the images can be slow)
             # The other is because  matplotlib is not inherently thread safe.
             futures = []
-            with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
                 for parameter1 in parameters:
                     # self.generateSingleParameterExports(list(optimizer.results), parameter1)
                     futures.append(executor.submit(self.generateSingleParameterExports, list(optimizer.results), parameter1))
