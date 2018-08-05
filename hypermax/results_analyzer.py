@@ -72,8 +72,12 @@ class ResultsAnalyzer:
 
             lossCsvFilename = 'loss_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
             lossImageFilename = 'loss_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
-            self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter1, parameter2, 'loss')
-            self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix')
+            lossCsvTop10PercentFilename = 'loss_matrix_top_10_percent_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
+            lossImageTop10PercentFilename = 'loss_matrix_top_10_percent_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+            self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter1, parameter2, 'loss', cutoff=1.0)
+            self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix', cutoff=1.0)
+            self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvTop10PercentFilename), results, parameter1, parameter2, 'loss', cutoff=0.1)
+            self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix (top 10 percent)', cutoff=0.1)
 
             timeCsvFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
             timeImageFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
@@ -93,24 +97,24 @@ class ResultsAnalyzer:
             lossBucketedCsvFilename = 'losses_bucketed_' + parameter.root[5:] + '.csv'
             lossImageFilename = 'loss_chart_' + parameter.root[5:] + '.png'
             lossBucketedImageFilename = 'loss_chart_bucketed_' + parameter.root[5:] + '.png'
-            lossTop10ImageFilename = 'loss_chart_top_10_percentile_' + parameter.root[5:] + '.png'
-            lossTop10BucketedImageFilename = 'loss_chart_top_10_percentile_bucketed_' + parameter.root[5:] + '.png'
+            lossTop10ImageFilename = 'loss_chart_top_10_percent_' + parameter.root[5:] + '.png'
+            lossTop10BucketedImageFilename = 'loss_chart_top_10_percent_bucketed_' + parameter.root[5:] + '.png'
             self.exportSingleParameterLossCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter, 'loss')
             self.exportSingleParameterLossCSV(os.path.join(subDirectory, lossBucketedCsvFilename), results, parameter, 'loss', numBuckets=20)
             self.exportSingleParameterLossChart(os.path.join(subDirectory, lossImageFilename), results, parameter, 'loss', 'Loss Chart')
-            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossBucketedImageFilename), results, parameter, 'loss', 'Loss Chart', numBuckets=20)
-            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10ImageFilename), results, parameter, 'loss', 'Loss Chart', cutoff=0.1)
-            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10BucketedImageFilename), results, parameter, 'loss', 'Loss Chart', cutoff=0.1, numBuckets=20)
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossBucketedImageFilename), results, parameter, 'loss', 'Loss Chart (20 Buckets)', numBuckets=20)
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10ImageFilename), results, parameter, 'loss', 'Loss Chart (top 10%)', cutoff=0.1)
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10BucketedImageFilename), results, parameter, 'loss', 'Loss Chart (20 buckets, top 10%)', cutoff=0.1, numBuckets=20)
 
             timeCsvFilename = 'times_' + parameter.root[5:] + '.csv'
             timeBucketedCsvFilename = 'times_bucketed_' + parameter.root[5:] + '.csv'
             timeImageFilename = 'time_chart_' + parameter.root[5:] + '.png'
-            timeTop10ImageFilename = 'time_chart_top_10_percentile_' + parameter.root[5:] + '.png'
+            timeTop10ImageFilename = 'time_chart_top_10_percent_' + parameter.root[5:] + '.png'
 
             self.exportSingleParameterLossCSV(os.path.join(subDirectory, timeCsvFilename), results, parameter, 'time')
             self.exportSingleParameterLossCSV(os.path.join(subDirectory, timeBucketedCsvFilename), results, parameter, 'time', numBuckets=20)
             self.exportSingleParameterLossChart(os.path.join(subDirectory, timeImageFilename), results, parameter, 'time', 'Time Chart', numBuckets=20)
-            self.exportSingleParameterLossChart(os.path.join(subDirectory, timeTop10ImageFilename), results, parameter, 'time', 'Time Chart', cutoff=0.1)
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, timeTop10ImageFilename), results, parameter, 'time', 'Time Chart (top 10%)', cutoff=0.1)
         except Exception as e:
             traceback.print_exc()
             return e
@@ -122,8 +126,9 @@ class ResultsAnalyzer:
         resultsFile = os.path.join(self.directory, 'results.csv')
         self.exportResultsCSV(resultsFile, optimizer)
 
-        correlationsFile = os.path.join(self.directory, 'correlations.csv')
-        self.exportCorrelationsToCSV(correlationsFile, optimizer)
+        if len(optimizer.results) > 2:
+            correlationsFile = os.path.join(self.directory, 'correlations.csv')
+            self.exportCorrelationsToCSV(correlationsFile, optimizer)
 
         # Only do these results if detailed is enabled, since they take a lot more computation
         if detailed:
@@ -174,8 +179,8 @@ class ResultsAnalyzer:
             writer.writerows(data)
 
 
-    def exportLossMatrixToCSV(self, fileName, results, parameter1, parameter2, valueKey='loss'):
-        scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey)
+    def exportLossMatrixToCSV(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0):
+        scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff)
 
         with open(fileName, 'wt') as file:
             writer = csv.writer(file)
@@ -191,8 +196,8 @@ class ResultsAnalyzer:
                     writer.writerow(['', str(parameter1Buckets[rowIndex])] + row)
 
 
-    def exportLossMatrixToImage(self, fileName, results, parameter1, parameter2, valueKey='loss', title='Loss Matrix'):
-        scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey)
+    def exportLossMatrixToImage(self, fileName, results, parameter1, parameter2, valueKey='loss', title='Loss Matrix', cutoff=1.0):
+        scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff)
 
         minVal = float(numpy.min(scores))
         maxVal = float(numpy.max(scores))
@@ -332,6 +337,10 @@ class ResultsAnalyzer:
                 filteredValues.append((values[index]))
                 filteredLosses.append((losses[index]))
 
+        if len(filteredValues) < 2:
+            filteredValues = values
+            filteredLosses = losses
+
         if numBuckets is not None:
             buckets = self.computeBucketsForParameter(results, parameter, numBuckets)
 
@@ -349,7 +358,7 @@ class ResultsAnalyzer:
             filteredLosses = newLosses
 
         bottom = numpy.min(filteredValues)
-        top = numpy.max(filteredValues)
+        top = numpy.max(filteredValues)+1e-5
         trendLineXCoords = numpy.arange(bottom, top, (top-bottom)/100)
 
         # If there are at least two results, we can fit a linear trend line
@@ -493,16 +502,21 @@ class ResultsAnalyzer:
 
         return buckets
 
-    def computeLossMatrix(self, results, parameter1, parameter2, valueKey='loss'):
+    def computeLossMatrix(self, results, parameter1, parameter2, valueKey='loss', cutoff=1.0):
         """
             This computes the loss matrix between two hyper-parameters. The loss matrix
             helps you to visualize what are the best areas of the hyper parameter space
             by plotting them on a grid and coloring them.
         """
+        losses = [numpy.min(v[valueKey]) for v in results]
+        threshhold = numpy.percentile(losses, cutoff*100)
+        filteredResults = [result for result in results if result[valueKey] < threshhold]
+
+
         # Divide the range up into 100 parts
         numBuckets = 10
-        parameter1Buckets = self.computeBucketsForParameter(results, parameter1, numBuckets)
-        parameter2Buckets = self.computeBucketsForParameter(results, parameter2, numBuckets)
+        parameter1Buckets = self.computeBucketsForParameter(filteredResults, parameter1, numBuckets)
+        parameter2Buckets = self.computeBucketsForParameter(filteredResults, parameter2, numBuckets)
 
         # Create a grid for each of the values
         resultGrid = []
@@ -532,7 +546,8 @@ class ResultsAnalyzer:
                         if parameter2Value <= value2:
                             parameter2Index = index2
                             break
-                    resultGrid[parameter1Index][parameter2Index].append(result)
+                    if parameter1Index is not None and parameter2Index is not None:
+                        resultGrid[parameter1Index][parameter2Index].append(result)
 
         # Now go through each entry in the grid and compute the average score
         scoreGrid = []
