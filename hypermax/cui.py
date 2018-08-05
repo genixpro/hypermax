@@ -453,7 +453,7 @@ def launchHypermaxUI(optimizer):
                     tableResultsSize += len(resultsToAdd)
 
             if len(optimizer.results) > 1:
-                allResults = numpy.array([result['loss'] for result in optimizer.results])
+                allResults = numpy.array([result['loss'] for result in optimizer.results if isinstance(result['loss'], float)])
 
                 windowSize = max(0, min(10, len(allResults)-10))
 

@@ -262,7 +262,7 @@ class ResultsAnalyzer:
             for j in range(len(parameter2Buckets)):
                 ax.text(j, i, getText(i,j), ha="center", va="center", color="black", fontsize=fontSize)
 
-        ax.set_title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:])
+        ax.set_title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
         fig.tight_layout()
         plt.savefig(fileName, dpi=200)
         plt.close()

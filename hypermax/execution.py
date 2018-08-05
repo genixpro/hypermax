@@ -157,7 +157,7 @@ class Execution:
 
             if self.killed:
                 output = str(process.stdout.read(), 'utf8')
-                self.result = {"status": "failed", "loss": self.config['auto_kill_loss'], "log": output, "error": "Model was automatically killed.",
+                self.result = {"status": "fail", "loss": self.config['auto_kill_loss'], "log": output, "error": "Model was automatically killed.",
                                "time": (datetime.datetime.now() - self.startTime).total_seconds()}
                 self.process = None
                 return self.result
@@ -165,7 +165,7 @@ class Execution:
             output = str(process.stdout.read(), 'utf8')
             cutoffIndex = output.find(self.scriptToken)
             if cutoffIndex == -1:
-                self.result = {"status": "failed", "loss": None, "log": output, "error": "Did not find result object in the output from the model script."}
+                self.result = {"status": "fail", "loss": None, "log": output, "error": "Did not find result object in the output from the model script."}
                 self.process = None
                 return self.result
             else:
@@ -179,7 +179,7 @@ class Execution:
                     self.process = None
                     return self.result
                 except json.JSONDecodeError as e:
-                    self.result = {"status": "failed", "loss": None, "log": output, "error": "Unable to decode the JSON result object from the model."}
+                    self.result = {"status": "fail", "loss": None, "log": output, "error": "Unable to decode the JSON result object from the model."}
                     self.process = None
                     return self.result
 
