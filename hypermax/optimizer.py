@@ -141,7 +141,7 @@ class Optimizer:
 
         self.trialsSinceDetailedResults += len(results)
 
-        if self.resultsFuture is None or self.resultsFuture.done():
+        if self.resultsFuture is None or self.resultsFuture.done() and len(self.results)>5:
             self.resultsFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
         else:
             self.resultsAnalyzer.outputResultsFolder(self, False)
