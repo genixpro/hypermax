@@ -151,8 +151,8 @@ class Optimizer:
         self.thread.start()
 
     def optimizationThread(self):
-        # Make sure we output results if the process is killed for some reason.
-        atexit.register(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
+        # Make sure we output basic results if the process is killed for some reason.
+        atexit.register(lambda: self.resultsAnalyzer.outputResultsFolder(self, False))
         while len(self.results) < self.totalTrials:
             self.runOptimizationRound()
         self.resultsAnalyzer.outputResultsFolder(self, True)

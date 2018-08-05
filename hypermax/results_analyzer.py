@@ -12,6 +12,9 @@ import matplotlib.style as mplstyle
 import matplotlib.pyplot as plt
 import concurrent.futures
 import colors
+import traceback
+import warnings
+import scipy.optimize
 
 class ResultsAnalyzer:
     """
@@ -62,19 +65,55 @@ class ResultsAnalyzer:
                 if not os.path.exists(partialDirectory):
                     os.mkdir(partialDirectory)
 
-    def generateExports(self, results, parameter1, parameter2):
-        lossCsvFilename = 'loss_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
-        lossImageFilename = 'loss_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
-        subDirectory = os.path.join(self.directory, parameter1.root[5:], parameter2.root[5:])
-        self.makeDirs(subDirectory)
-        self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter1, parameter2, 'loss')
-        self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix')
+    def generateMultiParameterExports(self, results, parameter1, parameter2):
+        try:
+            subDirectory = os.path.join(self.directory, parameter1.root[5:], parameter2.root[5:])
+            self.makeDirs(subDirectory)
 
-        timeCsvFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
-        timeImageFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+            lossCsvFilename = 'loss_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
+            lossImageFilename = 'loss_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+            self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter1, parameter2, 'loss')
+            self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix')
 
-        self.exportLossMatrixToCSV(os.path.join(subDirectory, timeCsvFilename), results, parameter1, parameter2, 'time')
-        self.exportLossMatrixToImage(os.path.join(subDirectory, timeImageFilename), results, parameter1, parameter2, 'time', 'Time Matrix')
+            timeCsvFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
+            timeImageFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+
+            self.exportLossMatrixToCSV(os.path.join(subDirectory, timeCsvFilename), results, parameter1, parameter2, 'time')
+            self.exportLossMatrixToImage(os.path.join(subDirectory, timeImageFilename), results, parameter1, parameter2, 'time', 'Time Matrix')
+        except Exception as e:
+            traceback.print_exc()
+            return e
+
+    def generateSingleParameterExports(self, results, parameter):
+        try:
+            subDirectory = os.path.join(self.directory, parameter.root[5:])
+            self.makeDirs(subDirectory)
+
+            lossCsvFilename = 'losses_' + parameter.root[5:] + '.csv'
+            lossBucketedCsvFilename = 'losses_bucketed_' + parameter.root[5:] + '.csv'
+            lossImageFilename = 'loss_chart_' + parameter.root[5:] + '.png'
+            lossBucketedImageFilename = 'loss_chart_bucketed_' + parameter.root[5:] + '.png'
+            lossTop10ImageFilename = 'loss_chart_top_10_percentile_' + parameter.root[5:] + '.png'
+            lossTop10BucketedImageFilename = 'loss_chart_top_10_percentile_bucketed_' + parameter.root[5:] + '.png'
+            self.exportSingleParameterLossCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter, 'loss')
+            self.exportSingleParameterLossCSV(os.path.join(subDirectory, lossBucketedCsvFilename), results, parameter, 'loss', numBuckets=20)
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossImageFilename), results, parameter, 'loss', 'Loss Chart')
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossBucketedImageFilename), results, parameter, 'loss', 'Loss Chart', numBuckets=20)
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10ImageFilename), results, parameter, 'loss', 'Loss Chart', cutoff=0.1)
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10BucketedImageFilename), results, parameter, 'loss', 'Loss Chart', cutoff=0.1, numBuckets=20)
+
+            timeCsvFilename = 'times_' + parameter.root[5:] + '.csv'
+            timeBucketedCsvFilename = 'times_bucketed_' + parameter.root[5:] + '.csv'
+            timeImageFilename = 'time_chart_' + parameter.root[5:] + '.png'
+            timeTop10ImageFilename = 'time_chart_top_10_percentile_' + parameter.root[5:] + '.png'
+
+            self.exportSingleParameterLossCSV(os.path.join(subDirectory, timeCsvFilename), results, parameter, 'time')
+            self.exportSingleParameterLossCSV(os.path.join(subDirectory, timeBucketedCsvFilename), results, parameter, 'time', numBuckets=20)
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, timeImageFilename), results, parameter, 'time', 'Time Chart', numBuckets=20)
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, timeTop10ImageFilename), results, parameter, 'time', 'Time Chart', cutoff=0.1)
+        except Exception as e:
+            traceback.print_exc()
+            return e
 
     def outputResultsFolder(self, optimizer, detailed=True):
         # Ensure the directory we want to store results in is there
@@ -92,14 +131,22 @@ class ResultsAnalyzer:
 
             # We use concurrent.futures.ProcessThreadPool here for two reasons. One for speed (since generating the images can be slow)
             # The other is because  matplotlib is not inherently thread safe.
-            with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
+            futures = []
+            with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
                 for parameter1 in parameters:
+                    # self.generateSingleParameterExports(list(optimizer.results), parameter1)
+                    futures.append(executor.submit(self.generateSingleParameterExports, list(optimizer.results), parameter1))
                     if parameter1.config['type'] == 'number':
                         for parameter2 in parameters:
                             if parameter2.config['type'] == 'number':
                                 if parameter1.root != parameter2.root:
-                                    # self.generateExports(list(optimizer.results), parameter1, parameter2)
-                                    executor.submit(self.generateExports, list(optimizer.results), parameter1, parameter2)
+                                    # self.generateMultiParameterExports(list(optimizer.results), parameter1, parameter2)
+                                    futures.append(executor.submit(self.generateMultiParameterExports, list(optimizer.results), parameter1, parameter2))
+            for future in futures:
+                if future.result() is not None:
+                    print(traceback.format_exception_only(Exception, future.result()))
+                    raise future.result()
+
 
     def exportResultsCSV(self, fileName, optimizer):
         with open(fileName, 'wt') as file:
@@ -216,6 +263,142 @@ class ResultsAnalyzer:
         plt.close()
 
 
+    def exportSingleParameterLossChart(self, fileName, results, parameter, valueKey='loss', title='Loss Chart', cutoff=1.0, numBuckets=None):
+        values, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff, numBuckets)
+
+        plt.title(title + " for " + parameter.root[5:])
+
+        if parameter.config.get('scaling', 'linear') == 'logarithmic':
+            plt.xscale('log')
+        else:
+            plt.xscale('linear')
+
+        xCoords = [value[parameter.root[5:]] for value in values]
+        yCoords = [value[valueKey] for value in values]
+
+        plt.scatter(xCoords, yCoords)
+
+        # Preserve the limits of the scatter graph when we apply the trend line
+        xlim = plt.xlim()
+        ylim = plt.ylim()
+
+        if linearTrendLine and exponentialTrendLine:
+            trendLineXCoords = [linearTrendLine[index][0] for index in range(len(linearTrendLine))]
+            plt.plot(trendLineXCoords, [(linearTrendLine[index][1], exponentialTrendLine[index][1]) for index in range(len(exponentialTrendLine))], color='red', linestyle='dashed')
+        elif linearTrendLine:
+            trendLineXCoords = [linearTrendLine[index][0] for index in range(len(linearTrendLine))]
+            plt.plot(trendLineXCoords, [linearTrendLine[index][1] for index in range(len(exponentialTrendLine))], color='red', linestyle='dashed')
+        elif exponentialTrendLine:
+            trendLineXCoords = [exponentialTrendLine[index][0] for index in range(len(linearTrendLine))]
+            plt.plot(trendLineXCoords, [exponentialTrendLine[index][1] for index in range(len(exponentialTrendLine))], color='red', linestyle='dashed')
+
+        plt.xlim(xlim)
+        plt.ylim(ylim)
+
+        plt.savefig(fileName, dpi=200)
+        plt.close()
+
+    def exportSingleParameterLossCSV(self, fileName, results, parameter, valueKey='loss', numBuckets=None):
+        newResults, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff=1.0, numBuckets=numBuckets)
+
+        with open(fileName, 'wt') as file:
+            writer = csv.DictWriter(file, fieldnames=[parameter.root[5:], valueKey, 'linearTrend', 'exponentialTrend'], dialect='unix')
+            writer.writeheader()
+            writer.writerows(newResults)
+
+
+    def computeParameterResultValues(self, results, parameter, valueKey='loss', cutoff=1.0, numBuckets=None):
+        mergedResults = {}
+        for result in results:
+            if isinstance(result[parameter.root[5:]], float):
+                value = result[parameter.root[5:]]
+                loss = result[valueKey]
+                key = str(roundPrecision(value,3))
+                if key in mergedResults:
+                    mergedResults[key].append(loss)
+                else:
+                    mergedResults[key] = [loss]
+
+        pairs = sorted(mergedResults.items(), key=lambda v: v[0])
+        values = [float(v[0]) for v in pairs]
+        losses = [numpy.min(v[1]) for v in pairs]
+
+        threshhold = numpy.percentile(losses, cutoff*100)
+
+        filteredValues = []
+        filteredLosses = []
+        for index in range(len(losses)):
+            if losses[index] < threshhold:
+                filteredValues.append((values[index]))
+                filteredLosses.append((losses[index]))
+
+        if numBuckets is not None:
+            buckets = self.computeBucketsForParameter(results, parameter, numBuckets)
+
+            newLosses = []
+            newValues = []
+            for bucketIndex, bucket in enumerate(buckets):
+                bucketLosses = []
+                for valueIndex, value in enumerate(filteredValues):
+                    if (bucketIndex == 0 and value < bucket) or (value >= buckets[bucketIndex-1] and value < bucket):
+                        bucketLosses.append(filteredLosses[valueIndex])
+                if len(bucketLosses) > 0:
+                    newLosses.append(numpy.mean(bucketLosses))
+                    newValues.append(bucket)
+            filteredValues = newValues
+            filteredLosses = newLosses
+
+        bottom = numpy.min(filteredValues)
+        top = numpy.max(filteredValues)
+        trendLineXCoords = numpy.arange(bottom, top, (top-bottom)/100)
+
+        # If there are at least two results, we can fit a linear trend line
+        linearTrendValues = None
+        linearTrendLine = None
+        if len(filteredLosses) > 2:
+            z = numpy.polyfit(filteredValues, filteredLosses, 1, full=True)[0]
+            p = numpy.poly1d(z)
+            linearTrendValues = p(filteredValues)
+            linearTrendLine = p(trendLineXCoords)
+
+        medianValue = numpy.median(filteredValues)
+        medianLoss = numpy.median(filteredLosses)
+
+        # If there are at least three results, we can attempt to fit an exponential trend line
+        exponentialTrendValues = None
+        exponentialTrendLine = None
+        try:
+            start_b = math.log10(medianLoss) / (-medianValue)
+            # start_b = 1e-0
+            if len(filteredLosses) > 2:
+                # Compute an exponential trend line
+                def exponenial_func(x, a, b, c):
+                    return a * numpy.exp(-b * x) + c
+
+                warnings.simplefilter('ignore', scipy.optimize.OptimizeWarning)
+                popt, pcov = scipy.optimize.curve_fit(exponenial_func, filteredValues, filteredLosses, p0=(1, start_b, 1), bounds=([-numpy.inf, -abs(start_b * 1e1), -numpy.inf], [+numpy.inf, +abs(start_b * 1e1), +numpy.inf]))
+                exponentialTrendValues = exponenial_func(numpy.array(filteredValues).copy(), *popt)
+                exponentialTrendLine = exponenial_func(numpy.array(trendLineXCoords).copy(), *popt)
+
+        except RuntimeError as e:
+            # Scipy gives a run-time error if it fails to find an exponential curve that fits the data
+            pass
+
+        newResults = []
+        for index in range(len(filteredLosses)):
+            data = {
+                parameter.root[5:]: filteredValues[index],
+                valueKey: filteredLosses[index],
+                "linearTrend": linearTrendValues[index] if linearTrendValues is not None else filteredLosses[index],
+                "exponentialTrend": exponentialTrendValues[index] if exponentialTrendValues is not None else filteredLosses[index]
+            }
+
+            newResults.append(data)
+
+        newResults = sorted(newResults, key=lambda val: val[parameter.root[5:]])
+
+        return newResults, list(zip(trendLineXCoords, linearTrendLine)) if exponentialTrendLine is not None else None, list(zip(trendLineXCoords, exponentialTrendLine)) if exponentialTrendLine is not None else None
+
     def computeCorrelations(self, optimizer):
         keys = Hyperparameter(optimizer.config.data['hyperparameters']).getFlatParameterNames()
 
@@ -286,6 +469,30 @@ class ResultsAnalyzer:
 
         return correlations, labels
 
+    def computeBucketsForParameter(self, results, parameter, numBuckets=10):
+        values = [result[parameter.root[5:]] for result in results]
+
+        bottom = numpy.min(values)
+        top = numpy.max(values)
+        if (top - bottom) < 1e-5:
+            top += 1e-5
+
+        buckets = []
+        if parameter.config['scaling'] == 'linear':
+            domain = top - bottom
+            buckets = list(numpy.arange(bottom, top + (domain / numBuckets), domain / numBuckets))[1:]
+        elif parameter.config['scaling'] == 'logarithmic':
+            logMax = math.log(top)
+            logMin = math.log(bottom)
+            domain = logMax - logMin
+            logBuckets = numpy.arange(logMin, logMax + (domain / numBuckets), domain / numBuckets)[1:]
+            buckets = [math.exp(n) for n in logBuckets]
+
+        # Round the precision of the buckets down. Helps with the formatting of the charts
+        buckets = [roundPrecision(value) for value in buckets]
+
+        return buckets
+
     def computeLossMatrix(self, results, parameter1, parameter2, valueKey='loss'):
         """
             This computes the loss matrix between two hyper-parameters. The loss matrix
@@ -294,31 +501,8 @@ class ResultsAnalyzer:
         """
         # Divide the range up into 100 parts
         numBuckets = 10
-        parameter1Buckets = []
-        if parameter1.config['scaling'] == 'linear':
-            domain = parameter1.config['max'] - parameter1.config['min']
-            parameter1Buckets = list(numpy.arange(parameter1.config['min'], parameter1.config['max'] + (domain / numBuckets), domain / numBuckets))[1:]
-        elif parameter1.config['scaling'] == 'logarithmic':
-            logMax = math.log(parameter1.config['max'])
-            logMin = math.log(parameter1.config['min'])
-            domain = logMax - logMin
-            logBuckets = numpy.arange(logMin, logMax + (domain / numBuckets), domain / numBuckets)[1:]
-            parameter1Buckets = [math.exp(n) for n in logBuckets]
-
-        parameter2Buckets = []
-        if parameter2.config['scaling'] == 'linear':
-            domain = parameter2.config['max'] - parameter2.config['min']
-            parameter2Buckets = list(numpy.arange(parameter2.config['min'], parameter2.config['max'] + (domain / numBuckets), domain / numBuckets))[1:]
-        elif parameter2.config['scaling'] == 'logarithmic':
-            logMax = math.log(parameter2.config['max'])
-            logMin = math.log(parameter2.config['min'])
-            domain = logMax - logMin
-            logBuckets = numpy.arange(logMin, logMax + (domain / numBuckets), domain / numBuckets)[1:]
-            parameter2Buckets = [math.exp(n) for n in logBuckets]
-
-        # Round the precision for each of the buckets
-        parameter1Buckets = [roundPrecision(value) for value in parameter1Buckets]
-        parameter2Buckets = [roundPrecision(value) for value in parameter2Buckets]
+        parameter1Buckets = self.computeBucketsForParameter(results, parameter1, numBuckets)
+        parameter2Buckets = self.computeBucketsForParameter(results, parameter2, numBuckets)
 
         # Create a grid for each of the values
         resultGrid = []
@@ -340,12 +524,12 @@ class ResultsAnalyzer:
 
                     parameter1Index = None
                     for index1, value1 in enumerate(parameter1Buckets):
-                        if parameter1Value < value1:
+                        if parameter1Value <= value1:
                             parameter1Index = index1
                             break
                     parameter2Index = None
                     for index2, value2 in enumerate(parameter2Buckets):
-                        if parameter2Value < value2:
+                        if parameter2Value <= value2:
                             parameter2Index = index2
                             break
                     resultGrid[parameter1Index][parameter2Index].append(result)
@@ -377,8 +561,11 @@ class ResultsAnalyzer:
                                     closestValues = [possibleColumn]
                                 elif dist == closest:
                                     closestValues.append(possibleColumn)
-                    # Take the mean of the closest values and use that for this location on the score grid
-                    scoreGrid[rowIndex][columnIndex] = numpy.mean(closestValues)
+                    if len(closestValues) > 0:
+                        # Take the mean of the closest values and use that for this location on the score grid
+                        scoreGrid[rowIndex][columnIndex] = numpy.mean(closestValues)
+                    else:
+                        scoreGrid[rowIndex][columnIndex] = 0
 
         # Round all of the values in the final score grid. This makes them more pleasant to look at for display purposes.
         for rowIndex, row in enumerate(scoreGrid):
