@@ -92,3 +92,26 @@ class Hyperparameter:
             return keys
         elif self.config['type'] == 'number':
             return [name]
+
+    def getFlatParameters(self):
+        name = self.root
+        if 'anyOf' in self.config or 'oneOf' in self.config:
+            parameters = []
+            if 'anyOf' in self.config:
+                data = self.config['anyOf']
+            else:
+                data = self.config['oneOf']
+
+            for index, param in enumerate(data):
+                subParameters = Hyperparameter(param, name + "." + str(index)).getFlatParameters()
+                parameters = parameters + subParameters
+            return parameters
+        elif self.config['type'] == 'object':
+            parameters = []
+            for key in self.config['properties'].keys():
+                config = self.config['properties'][key]
+                subParameters = Hyperparameter(config, name + "." + key).getFlatParameters()
+                parameters = parameters + subParameters
+            return parameters
+        elif self.config['type'] == 'number':
+            return [self]

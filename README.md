@@ -328,21 +328,16 @@ Feel free to contribute! Reach out to Brad at brad@electricbrain.io or here on G
 This is the grand-todo list and was created on August 4, 2018. Some items may have been completed.
 
 - Results
-    - Automatic saving of results file, able to configure save-location.
-    - Results files have a name which is automatically incremented. Old results never overwritten unless explicitly told too.
-    - Automatically export the "results bundle" to a directory (more then just results file)
+    - Able to configure save-location.
     - Automatic uploading of results to Google Drive
 - Model Execution
-    - Autokill long-running models
-    - Autokill models that take too much RAM (or GPU RAM)
+    - Autokill models that take too much GPU RAM
     - Autokill models that take too much Disk / Network (not sure about this one)
     - Fix bug related to using too many file handlers.
     - Automatically keep logs / errors for models executing
     - Execute model as an executable
-    - Execute model as a python function
     - Execute model remotely, through ssh
     - Execute model by sending a message through message-buffer like RabbitMQ or Kafka (receive results same way)
-    - Support different type of formats for the result (e.g. a single number through to json object and more)
     - Rsync a folder prior to remote execution
     - Can attach additional arbitrary metadata to your model results
     - Able to have "speed-tests" on models, where your hyper-parameters are tested on a reduced dataset in order to measure the speed. Useful to eliminate bad hyper-parameters without executing the full model.
@@ -401,9 +396,7 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
     - View a hotspot grid between two hyper-parameters, to see the sensitive areas
     - Improve feature-vector design for hyper-parameter correlations
     - Export loss-chart to image with matplotlib
-    - Export hyper-parameter correlations to image with matplotlib
     - Export hyper-parameter accuracies to image with matplotlib
-    - Export hyper-parameter hot-spot grid to image with matplotlib
     - Edit / change the hyper-parameter space while the model is running
     - Estimate the cardinality of the search-space
     - Estimate number of runs per parameter (or something like this)

@@ -10,9 +10,9 @@ import queue
 import random
 import concurrent.futures
 import functools
+import atexit
 from hypermax.execution import Execution
-from hypermax.hyperparameter import Hyperparameter
-import sklearn.covariance
+from hypermax.results_analyzer import ResultsAnalyzer
 
 from hypermax.configuration import Configuration
 
@@ -34,6 +34,8 @@ class Optimizer:
 
         self.threadExecutor = concurrent.futures.ThreadPoolExecutor()
 
+        self.resultsAnalyzer = ResultsAnalyzer(configuration)
+
         self.results = []
 
         self.best = None
@@ -42,6 +44,7 @@ class Optimizer:
         self.thread = threading.Thread(target=lambda: self.optimizationThread(), daemon=True)
 
         self.totalTrials = 1000
+        self.trialsSinceDetailedResults = 0
 
     def __del__(self):
         self.threadExecutor.shutdown(wait=True)
@@ -135,12 +138,24 @@ class Optimizer:
 
         self.results = self.results + results
 
+        self.trialsSinceDetailedResults += len(results)
+
+        if self.trialsSinceDetailedResults >= 50:
+            self.resultsAnalyzer.outputResultsFolder(self, True)
+            self.trialsSinceDetailedResults = 0
+        else:
+            self.resultsAnalyzer.outputResultsFolder(self, False)
+
+
     def runOptimization(self):
         self.thread.start()
 
     def optimizationThread(self):
+        # Make sure we output results if the process is killed for some reason.
+        atexit.register(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
         while len(self.results) < self.totalTrials:
             self.runOptimizationRound()
+        self.resultsAnalyzer.outputResultsFolder(self, True)
 
     def convertTrialsToResults(self, trials):
         results = []
@@ -208,78 +223,3 @@ class Optimizer:
             reader = csv.DictReader(file, dialect='unix')
             rows = list(reader)
         self.convertResultsToTrials(rows)
-
-    def computeCorrelations(self):
-        inputs = []
-
-        keys = Hyperparameter(self.config.data['hyperparameters']).getFlatParameterNames()
-
-        values = {}
-        types = {}
-        for key in keys:
-            values[key] = set()
-            types[key] = set()
-
-        for result in self.results:
-            for key in keys:
-                value = result[key[5:]]
-                values[key].add(value)
-                types[key].add(type(value).__name__)
-
-        vectors = []
-        labels = []
-        outputs = []
-        for result in self.results:
-            vector = []
-            vectorLabels = []
-            for key in keys:
-                value = result[key[5:]]
-                if 'bool' in types[key] or 'int' in types[key] or 'float' in types[key]:
-                    if isinstance(value, int) or isinstance(value, float) or isinstance(value, bool):
-                        vector.append(float(value))
-                        vectorLabels.append(key + ".number")
-                    else:
-                        vector.append(-1)
-                        vectorLabels.append(key + ".number")
-                if 'NoneType' in types[key]:
-                    if value is None:
-                        vector.append(value)
-                        vectorLabels.append(key + ".none")
-                    else:
-                        vector.append(-1)
-                        vectorLabels.append(key + ".none")
-                if 'str' in types[key]:
-                    classes = [v for v in values[key] if isinstance(v, str)]
-
-                    if isinstance(value, str):
-                        for v in classes:
-                            if value == v:
-                                vector.append(1.0)
-                            else:
-                                vector.append(0.0)
-                            vectorLabels.append(key + ".class." + v)
-                    else:
-                        for v in classes:
-                            vector.append(0)
-                            vectorLabels.append(key + ".class." + v)
-            vectors.append(vector)
-            outputs.append(result['loss'])
-            if not labels:
-                labels = vectorLabels
-
-        model = sklearn.covariance.LedoitWolf()
-        model.fit(numpy.array(vectors), numpy.array(outputs))
-
-        covariances = model.covariance_
-        correlations = numpy.zeros_like(covariances)
-
-        deviations = numpy.std(vectors, axis=0)
-
-        for label1Index in range(len(labels)):
-            for label2Index in range(len(labels)):
-                correlations[label1Index][label2Index] = covariances[label1Index][label2Index] / (deviations[label1Index] * deviations[label2Index])
-
-        return correlations, labels
-
-
-

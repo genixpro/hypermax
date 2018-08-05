@@ -21,7 +21,9 @@ setup(
         'pyyaml',
         'urwid',
         'panwid',
-        'psutil'
+        'psutil',
+        'matplotlib',
+        'colors.py'
     ],
     zip_safe=False,
     entry_points={

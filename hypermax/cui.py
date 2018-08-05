@@ -252,6 +252,9 @@ def launchHypermaxUI(optimizer):
         else:
             popupContainer.open_pop_up_with_widget(MessagePopup('There is no best model to export yes.'), size=(('relative', 95), ('relative', 95)))
 
+    def exportDetailedResults():
+        optimizer.resultsAnalyzer.outputResultsFolder(optimizer)
+
     popupContainer = None
     graph = None
     graphVscale = None
@@ -262,6 +265,7 @@ def launchHypermaxUI(optimizer):
     def makeMainMenu():
         content = [
             urwid.AttrWrap(urwid.Button("Export Results to CSV", on_press=lambda button: popupContainer.open_pop_up_with_widget(ExportCSVPopup(optimizer))), 'body', focus_attr='focus'),
+            urwid.AttrWrap(urwid.Button("Export Detailed Results", on_press=lambda button: exportDetailedResults()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('View Hyperparameter Correlations', on_press=lambda button: viewHyperparameterCorrelations()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('Export Best Hyperparameters to File', on_press=lambda button: exportBestParameters()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('Exit', on_press=onExitClicked), 'body', focus_attr='focus')
@@ -413,7 +417,7 @@ def launchHypermaxUI(optimizer):
             if optimizer.best:
                 paramKeys = [key for key in optimizer.best.keys() if key not in optimizer.resultInformationKeys]
 
-                cutoff = int(len(paramKeys)/2)+1
+                cutoff = int((len(paramKeys)+1)/2)
                 leftParamKeys = paramKeys[:cutoff]
                 rightParamKeys = paramKeys[cutoff:]
 
