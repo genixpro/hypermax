@@ -70,18 +70,19 @@ class ResultsAnalyzer:
             subDirectory = os.path.join(self.directory, parameter1.root[5:], parameter2.root[5:])
             self.makeDirs(subDirectory)
 
-            lossCsvFilename = 'loss_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
-            lossImageFilename = 'loss_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
-            lossCsvTop10PercentFilename = 'loss_matrix_top_10_percent_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
-            lossImageTop10PercentFilename = 'loss_matrix_top_10_percent_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
-            responseImageFilename = 'response_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
-            responseImageTop10PercentFilename = 'response_matrix_top_10_percent_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
-            self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter1, parameter2, 'loss', cutoff=1.0)
-            self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix', cutoff=1.0)
-            self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageFilename), results, parameter1, parameter2, 'loss', 'Response Matrix', cutoff=1.0, mode='response')
-            self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvTop10PercentFilename), results, parameter1, parameter2, 'loss', cutoff=0.1)
-            self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix (top 10 percent)', cutoff=0.1)
-            self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Response Matrix (top 10 percent)', cutoff=0.1, mode='response')
+            for reduction in ['mean', 'min']:
+                lossCsvFilename = 'loss_matrix_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
+                lossImageFilename = 'loss_matrix_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+                lossCsvTop10PercentFilename = 'loss_matrix_top_10_percent_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
+                lossImageTop10PercentFilename = 'loss_matrix_top_10_percent_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+                responseImageFilename = 'response_matrix_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+                responseImageTop10PercentFilename = 'response_matrix_top_10_percent_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+                self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter1, parameter2, 'loss', cutoff=1.0, reduction=reduction)
+                self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix (' + reduction + ")", cutoff=1.0, reduction=reduction)
+                self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageFilename), results, parameter1, parameter2, 'loss', 'Response Matrix (' + reduction + ")", cutoff=1.0, mode='response', reduction=reduction)
+                self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvTop10PercentFilename), results, parameter1, parameter2, 'loss', cutoff=0.1, reduction=reduction)
+                self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix (top 10 percent, ' + reduction + ')', cutoff=0.1, reduction=reduction)
+                self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Response Matrix (top 10 percent, ' + reduction + ')', cutoff=0.1, mode='response', reduction=reduction)
 
             timeCsvFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
             timeImageFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
@@ -176,8 +177,8 @@ class ResultsAnalyzer:
             writer.writerows(data)
 
 
-    def exportLossMatrixToCSV(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0):
-        scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff)
+    def exportLossMatrixToCSV(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, reduction='min'):
+        scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff, reduction=reduction)
 
         with open(fileName, 'wt') as file:
             writer = csv.writer(file)
@@ -193,8 +194,8 @@ class ResultsAnalyzer:
                     writer.writerow(['', str(parameter1Buckets[rowIndex])] + row)
 
 
-    def exportLossMatrixToImage(self, fileName, results, parameter1, parameter2, valueKey='loss', title='Loss Matrix', cutoff=1.0, mode='global'):
-        scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff)
+    def exportLossMatrixToImage(self, fileName, results, parameter1, parameter2, valueKey='loss', title='Loss Matrix', cutoff=1.0, mode='global', reduction='min'):
+        scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff, reduction=reduction)
 
         minVal = float(numpy.min(scores))
         maxVal = float(numpy.max(scores))
@@ -516,7 +517,7 @@ class ResultsAnalyzer:
 
         return buckets
 
-    def computeLossMatrix(self, results, parameter1, parameter2, valueKey='loss', cutoff=1.0):
+    def computeLossMatrix(self, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, reduction='min'):
         """
             This computes the loss matrix between two hyper-parameters. The loss matrix
             helps you to visualize what are the best areas of the hyper parameter space
@@ -571,7 +572,10 @@ class ResultsAnalyzer:
             scoreRow = []
             for column in row:
                 if len(column) > 0:
-                    scoreRow.append(numpy.min([result[valueKey] for result in column if result[valueKey] is not None]))
+                    if reduction == 'min':
+                        scoreRow.append(numpy.min([result[valueKey] for result in column if result[valueKey] is not None]))
+                    elif reduction == 'mean':
+                        scoreRow.append(numpy.mean([result[valueKey] for result in column if result[valueKey] is not None]))
                 else:
                     scoreRow.append(None)
             scoreGrid.append(scoreRow)

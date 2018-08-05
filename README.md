@@ -395,8 +395,6 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
 - Tools for Hyperparameter Tuning:
     - View a hotspot grid between two hyper-parameters, to see the sensitive areas
     - Improve feature-vector design for hyper-parameter correlations
-    - Export loss-chart to image with matplotlib
-    - Export hyper-parameter accuracies to image with matplotlib
     - Edit / change the hyper-parameter space while the model is running
     - Estimate the cardinality of the search-space
     - Estimate number of runs per parameter (or something like this)
