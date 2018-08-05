@@ -74,10 +74,14 @@ class ResultsAnalyzer:
             lossImageFilename = 'loss_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
             lossCsvTop10PercentFilename = 'loss_matrix_top_10_percent_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
             lossImageTop10PercentFilename = 'loss_matrix_top_10_percent_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+            responseImageFilename = 'response_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+            responseImageTop10PercentFilename = 'response_matrix_top_10_percent_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
             self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter1, parameter2, 'loss', cutoff=1.0)
             self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix', cutoff=1.0)
+            self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageFilename), results, parameter1, parameter2, 'loss', 'Response Matrix', cutoff=1.0, mode='response')
             self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvTop10PercentFilename), results, parameter1, parameter2, 'loss', cutoff=0.1)
             self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix (top 10 percent)', cutoff=0.1)
+            self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Response Matrix (top 10 percent)', cutoff=0.1, mode='response')
 
             timeCsvFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
             timeImageFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
@@ -189,13 +193,14 @@ class ResultsAnalyzer:
                     writer.writerow(['', str(parameter1Buckets[rowIndex])] + row)
 
 
-    def exportLossMatrixToImage(self, fileName, results, parameter1, parameter2, valueKey='loss', title='Loss Matrix', cutoff=1.0):
+    def exportLossMatrixToImage(self, fileName, results, parameter1, parameter2, valueKey='loss', title='Loss Matrix', cutoff=1.0, mode='global'):
         scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff)
 
         minVal = float(numpy.min(scores))
         maxVal = float(numpy.max(scores))
+        redVal = float(numpy.percentile(scores, q=80))
         yellowVal = float(numpy.percentile(scores, q=30))
-        greenVal = float(numpy.percentile(scores, q=15))
+        greenVal = float(numpy.percentile(scores, q=10))
 
         green = numpy.array(colors.rgb(0, 1, 0).hsv._color)
         yellow = numpy.array(colors.rgb(1, 1, 0).hsv._color)
@@ -204,20 +209,35 @@ class ResultsAnalyzer:
 
         colorGrid = []
         for row in scores:
+            rowMinVal = float(numpy.min(row))
+            rowMaxVal = float(numpy.max(row))
+            rowRedVal = float(numpy.percentile(row, q=80))
+            rowYellowVal = float(numpy.percentile(row, q=30))
+            rowGreenVal = float(numpy.percentile(row, q=5))
+
+            if mode == 'global':
+                rowMinVal = minVal
+                rowMaxVal = maxVal
+                rowRedVal = redVal
+                rowYellowVal = yellowVal
+                rowGreenVal = greenVal
+
             colorRow = []
             for score in row:
-                if score <= greenVal:
-                    valRange = max(0.1, (greenVal - minVal))
-                    dist = (score - minVal) / valRange
+                if score <= rowGreenVal:
+                    valRange = max(0.1, (rowGreenVal - rowMinVal))
+                    dist = (score - rowMinVal) / valRange
                     color = colors.hsv(*(green * dist + blue * (1.0 - dist)))
-                elif score <= yellowVal:
-                    valRange = max(0.1, (yellowVal - greenVal))
-                    dist = (score - greenVal) / valRange
+                elif score <= rowYellowVal:
+                    valRange = max(0.1, (rowYellowVal - rowGreenVal))
+                    dist = (score - rowGreenVal) / valRange
                     color = colors.hsv(*(yellow * dist + green * (1.0 - dist)))
-                else:
-                    valRange = max(0.1, (maxVal - yellowVal))
-                    dist = (score - yellowVal) / valRange
+                elif score <= rowRedVal:
+                    valRange = max(0.1, (rowMaxVal - rowYellowVal))
+                    dist = (score - rowYellowVal) / valRange
                     color = colors.hsv(*(red * dist + yellow * (1.0 - dist)))
+                else:
+                    color = colors.hsv(*(red))
                 colorRow.append(color.rgb._color)
             colorGrid.append(colorRow)
 
