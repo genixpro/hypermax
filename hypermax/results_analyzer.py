@@ -124,7 +124,7 @@ class ResultsAnalyzer:
         self.makeDirs(self.directory)
 
         resultsFile = os.path.join(self.directory, 'results.csv')
-        self.exportResultsCSV(resultsFile, optimizer)
+        optimizer.exportResultsCSV(resultsFile)
 
         if len(optimizer.results) > 2:
             correlationsFile = os.path.join(self.directory, 'correlations.csv')
@@ -151,13 +151,6 @@ class ResultsAnalyzer:
                 if future.result() is not None:
                     print(traceback.format_exception_only(Exception, future.result()))
                     raise future.result()
-
-
-    def exportResultsCSV(self, fileName, optimizer):
-        with open(fileName, 'wt') as file:
-            writer = csv.DictWriter(file, fieldnames=optimizer.results[0].keys(), dialect='unix')
-            writer.writeheader()
-            writer.writerows(optimizer.results)
 
 
     def exportCorrelationsToCSV(self, fileName, optimizer):
@@ -315,7 +308,7 @@ class ResultsAnalyzer:
     def computeParameterResultValues(self, results, parameter, valueKey='loss', cutoff=1.0, numBuckets=None):
         mergedResults = {}
         for result in results:
-            if isinstance(result[parameter.root[5:]], float):
+            if isinstance(result[parameter.root[5:]], float) and result[valueKey] is not None:
                 value = result[parameter.root[5:]]
                 loss = result[valueKey]
                 key = str(roundPrecision(value,3))
@@ -376,22 +369,23 @@ class ResultsAnalyzer:
         # If there are at least three results, we can attempt to fit an exponential trend line
         exponentialTrendValues = None
         exponentialTrendLine = None
-        try:
-            start_b = math.log10(medianLoss) / (-medianValue)
-            # start_b = 1e-0
-            if len(filteredLosses) > 2:
-                # Compute an exponential trend line
-                def exponenial_func(x, a, b, c):
-                    return a * numpy.exp(-b * x) + c
+        if medianValue != 0:
+            try:
+                start_b = math.log10(medianLoss) / (-medianValue)
+                # start_b = 1e-0
+                if len(filteredLosses) > 2:
+                    # Compute an exponential trend line
+                    def exponenial_func(x, a, b, c):
+                        return a * numpy.exp(-b * x) + c
 
-                warnings.simplefilter('ignore', scipy.optimize.OptimizeWarning)
-                popt, pcov = scipy.optimize.curve_fit(exponenial_func, filteredValues, filteredLosses, p0=(1, start_b, 1), bounds=([-numpy.inf, -abs(start_b * 1e1), -numpy.inf], [+numpy.inf, +abs(start_b * 1e1), +numpy.inf]))
-                exponentialTrendValues = exponenial_func(numpy.array(filteredValues).copy(), *popt)
-                exponentialTrendLine = exponenial_func(numpy.array(trendLineXCoords).copy(), *popt)
+                    warnings.simplefilter('ignore', scipy.optimize.OptimizeWarning)
+                    popt, pcov = scipy.optimize.curve_fit(exponenial_func, filteredValues, filteredLosses, p0=(1, start_b, 1), bounds=([-numpy.inf, -abs(start_b * 1e1), -numpy.inf], [+numpy.inf, +abs(start_b * 1e1), +numpy.inf]))
+                    exponentialTrendValues = exponenial_func(numpy.array(filteredValues).copy(), *popt)
+                    exponentialTrendLine = exponenial_func(numpy.array(trendLineXCoords).copy(), *popt)
 
-        except RuntimeError as e:
-            # Scipy gives a run-time error if it fails to find an exponential curve that fits the data
-            pass
+            except RuntimeError as e:
+                # Scipy gives a run-time error if it fails to find an exponential curve that fits the data
+                pass
 
         newResults = []
         for index in range(len(filteredLosses)):
@@ -508,9 +502,9 @@ class ResultsAnalyzer:
             helps you to visualize what are the best areas of the hyper parameter space
             by plotting them on a grid and coloring them.
         """
-        losses = [numpy.min(v[valueKey]) for v in results]
+        losses = [numpy.min(v[valueKey]) for v in results if v[valueKey] is not None]
         threshhold = numpy.percentile(losses, cutoff*100)
-        filteredResults = [result for result in results if result[valueKey] < threshhold]
+        filteredResults = [result for result in results if result[valueKey] is not None and result[valueKey] < threshhold]
 
 
         # Divide the range up into 100 parts
@@ -528,6 +522,8 @@ class ResultsAnalyzer:
 
         # Go through each of the results, and put them into one of the buckets (or exclude them if these hyper-parameters were not active
         for result in results:
+            if result[valueKey] is None:
+                continue
             paramater1Key = parameter1.root[5:]
             paramater2Key = parameter2.root[5:]
 
@@ -555,7 +551,7 @@ class ResultsAnalyzer:
             scoreRow = []
             for column in row:
                 if len(column) > 0:
-                    scoreRow.append(numpy.min([result[valueKey] for result in column]))
+                    scoreRow.append(numpy.min([result[valueKey] for result in column if result[valueKey] is not None]))
                 else:
                     scoreRow.append(None)
             scoreGrid.append(scoreRow)

@@ -212,14 +212,35 @@ class Optimizer:
             trials.insert_trial_doc(data)
         return trials
 
-    def exportCSV(self, fileName):
+
+
+    def exportResultsCSV(self, fileName):
         with open(fileName, 'wt') as file:
             writer = csv.DictWriter(file, fieldnames=self.results[0].keys(), dialect='unix')
             writer.writeheader()
             writer.writerows(self.results)
 
-    def importCSV(self, fileName):
-        with open(fileName, 'rt') as file:
-            reader = csv.DictReader(file, dialect='unix')
-            rows = list(reader)
-        self.convertResultsToTrials(rows)
+    def importResultsCSV(self, fileName):
+        with open(fileName) as file:
+            reader = csv.DictReader(file)
+            results = list(reader)
+            newResults = []
+            for result in results:
+                newResult = {}
+                for key,value in result.items():
+                    if value:
+                        try:
+                            if '.' in value or 'e' in value:
+                                newResult[key] = float(value)
+                            else:
+                                newResult[key] = int(value)
+                        except ValueError:
+                            newResult[key] = value
+                    elif key == 'loss':
+                        newResult[key] = None
+                    elif key == 'log':
+                        newResult[key] = ''
+                    else:
+                        newResult[key] = None
+                newResults.append(newResult)
+            self.results = newResults

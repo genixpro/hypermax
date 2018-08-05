@@ -21,26 +21,8 @@ def main():
     optimizer = Optimizer(config_data)
 
     if args.results_directory:
-        with open(os.path.join(args.results_directory, 'results.csv')) as file:
-            reader = csv.DictReader(file)
-            results = list(reader)
-            for result in results:
-                for key,value in result.items():
-                    if value:
-                        try:
-                            if '.' in value:
-                                result[key] = float(value)
-                            else:
-                                result[key] = int(value)
-                        except ValueError:
-                            result[key] = value
-                    elif key == 'loss':
-                        result[key] = None
-                    elif key in optimizer.resultInformationKeys:
-                        result[key] = ''
-                    else:
-                        result[key] = None
-            optimizer.results = results
+        optimizer.importResultsCSV(os.path.join(args.results_directory, 'results.csv'))
+
 
 
     optimizer.runOptimization()
