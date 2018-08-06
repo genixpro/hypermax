@@ -131,12 +131,12 @@ class ResultsAnalyzer:
         resultsFile = os.path.join(self.directory, 'results.csv')
         optimizer.exportResultsCSV(resultsFile)
 
-        if len(optimizer.results) > 2:
+        if len(optimizer.results) > 5:
             correlationsFile = os.path.join(self.directory, 'correlations.csv')
             self.exportCorrelationsToCSV(correlationsFile, optimizer)
 
         # Only do these results if detailed is enabled, since they take a lot more computation
-        if detailed:
+        if len(optimizer.results) > 5 and detailed:
             parameters = Hyperparameter(optimizer.config.data['hyperparameters']).getFlatParameters()
 
             # We use concurrent.futures.ProcessThreadPool here for two reasons. One for speed (since generating the images can be slow)
@@ -174,6 +174,7 @@ class ResultsAnalyzer:
 
         with open(fileName, 'wt') as file:
             writer = csv.DictWriter(file, fieldnames=['field'] + labels)
+            writer.writeheader()
             writer.writerows(data)
 
 
@@ -580,6 +581,13 @@ class ResultsAnalyzer:
                     scoreRow.append(None)
             scoreGrid.append(scoreRow)
 
+        newScoreGrid = []
+        for value in parameter1Buckets:
+            row = []
+            for value in parameter2Buckets:
+                row.append(0)
+            newScoreGrid.append(row)
+
         # Now for any parts of the grid which don't have a score, we find the nearest neighbor on the grid and just take its score. If theres multiple, we take the average of them.
         for rowIndex, row in enumerate(scoreGrid):
             for columnIndex, column in enumerate(row):
@@ -598,16 +606,18 @@ class ResultsAnalyzer:
                                     closestValues.append(possibleColumn)
                     if len(closestValues) > 0:
                         # Take the mean of the closest values and use that for this location on the score grid
-                        scoreGrid[rowIndex][columnIndex] = numpy.mean(closestValues)
+                        newScoreGrid[rowIndex][columnIndex] = numpy.mean(closestValues)
                     else:
-                        scoreGrid[rowIndex][columnIndex] = 0
+                        newScoreGrid[rowIndex][columnIndex] = 0
+                else:
+                    newScoreGrid[rowIndex][columnIndex] = scoreGrid[rowIndex][columnIndex]
 
         # Round all of the values in the final score grid. This makes them more pleasant to look at for display purposes.
-        for rowIndex, row in enumerate(scoreGrid):
+        for rowIndex, row in enumerate(newScoreGrid):
             for columnIndex, column in enumerate(row):
-                scoreGrid[rowIndex][columnIndex] = roundPrecision(scoreGrid[rowIndex][columnIndex])
+                newScoreGrid[rowIndex][columnIndex] = roundPrecision(newScoreGrid[rowIndex][columnIndex])
 
-        return scoreGrid, parameter1Buckets, parameter2Buckets
+        return newScoreGrid, parameter1Buckets, parameter2Buckets
 
 
 
