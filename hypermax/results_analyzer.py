@@ -8,6 +8,7 @@ import sklearn.covariance
 import numpy
 from hypermax.utils import roundPrecision
 import matplotlib
+import matplotlib.cm
 import matplotlib.style as mplstyle
 import matplotlib.pyplot as plt
 import concurrent.futures
@@ -15,6 +16,9 @@ import colors
 import traceback
 import warnings
 import scipy.optimize
+import random
+
+
 
 class ResultsAnalyzer:
     """
@@ -37,6 +41,7 @@ class ResultsAnalyzer:
         self.directory = resultsConfig['results_directory'] + "_" + str(increment)
 
         self.fig = None
+        self.chartNumber = 0
 
     @classmethod
     def configurationSchema(self):
@@ -58,7 +63,7 @@ class ResultsAnalyzer:
                 parts.insert(0, tail)
             for index in range(len(parts)):
                 if index > 0:
-                    partialDirectory = os.path.join(*parts[:index+1])
+                    partialDirectory = os.path.join(*parts[:index + 1])
                 else:
                     partialDirectory = parts[0]
 
@@ -78,17 +83,21 @@ class ResultsAnalyzer:
                 responseImageFilename = 'response_matrix_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
                 responseImageTop10PercentFilename = 'response_matrix_top_10_percent_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
                 self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter1, parameter2, 'loss', cutoff=1.0, reduction=reduction)
-                self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix (' + reduction + ")", cutoff=1.0, reduction=reduction)
-                self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageFilename), results, parameter1, parameter2, 'loss', 'Response Matrix (' + reduction + ")", cutoff=1.0, mode='response', reduction=reduction)
+                self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix (' + reduction + ")", cutoff=1.0,
+                                             reduction=reduction)
+                self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageFilename), results, parameter1, parameter2, 'loss', 'Response Matrix (' + reduction + ")",
+                                             cutoff=1.0, mode='response', reduction=reduction)
                 self.exportLossMatrixToCSV(os.path.join(subDirectory, lossCsvTop10PercentFilename), results, parameter1, parameter2, 'loss', cutoff=0.1, reduction=reduction)
-                self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix (top 10 percent, ' + reduction + ')', cutoff=0.1, reduction=reduction)
-                self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Response Matrix (top 10 percent, ' + reduction + ')', cutoff=0.1, mode='response', reduction=reduction)
-
+                self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageTop10PercentFilename), results, parameter1, parameter2, 'loss',
+                                             'Loss Matrix (top 10 percent, ' + reduction + ')', cutoff=0.1, reduction=reduction)
+                self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageTop10PercentFilename), results, parameter1, parameter2, 'loss',
+                                             'Response Matrix (top 10 percent, ' + reduction + ')', cutoff=0.1, mode='response', reduction=reduction)
 
             scatterFilename = 'scatter_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
             scatterTop10PercentFilename = 'scatter_top_10_percent' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
             self.exportTwoParameterScatter(os.path.join(subDirectory, scatterFilename), results, parameter1, parameter2, 'loss', cutoff=1.0, title='Scatter Chart')
-            self.exportTwoParameterScatter(os.path.join(subDirectory, scatterTop10PercentFilename), results, parameter1, parameter2, 'loss', cutoff=0.1, title='Scatter Chart (top 10 percent)')
+            self.exportTwoParameterScatter(os.path.join(subDirectory, scatterTop10PercentFilename), results, parameter1, parameter2, 'loss', cutoff=0.1,
+                                           title='Scatter Chart (top 10 percent)')
 
             timeCsvFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
             timeImageFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
@@ -115,7 +124,8 @@ class ResultsAnalyzer:
             self.exportSingleParameterLossChart(os.path.join(subDirectory, lossImageFilename), results, parameter, 'loss', 'Loss Chart')
             self.exportSingleParameterLossChart(os.path.join(subDirectory, lossBucketedImageFilename), results, parameter, 'loss', 'Loss Chart (20 Buckets)', numBuckets=20)
             self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10ImageFilename), results, parameter, 'loss', 'Loss Chart (top 10%)', cutoff=0.1)
-            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10BucketedImageFilename), results, parameter, 'loss', 'Loss Chart (20 buckets, top 10%)', cutoff=0.1, numBuckets=20)
+            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10BucketedImageFilename), results, parameter, 'loss', 'Loss Chart (20 buckets, top 10%)',
+                                                cutoff=0.1, numBuckets=20)
 
             timeCsvFilename = 'times_' + parameter.root[5:] + '.csv'
             timeBucketedCsvFilename = 'times_bucketed_' + parameter.root[5:] + '.csv'
@@ -163,7 +173,6 @@ class ResultsAnalyzer:
                     print(traceback.format_exception_only(Exception, future.result()))
                     raise future.result()
 
-
     def exportCorrelationsToCSV(self, fileName, optimizer):
         matrix, labels = self.computeCorrelations(optimizer)
 
@@ -183,27 +192,65 @@ class ResultsAnalyzer:
             writer.writeheader()
             writer.writerows(data)
 
-
     def exportTwoParameterScatter(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, title="Scatter"):
-        xCoords = []
-        yCoords = []
-
-        losses = [result[valueKey] for result in results if result[valueKey] is not None]
-        threshhold = numpy.percentile(losses, cutoff*100)
+        chartNumber = self.chartNumber
+        self.chartNumber += 1
 
         parameter1Key = parameter1.root[5:]
         parameter2Key = parameter2.root[5:]
 
-        fig, ax = plt.subplots()
+        losses = [result[valueKey] for result in results if result[valueKey] is not None]
+        threshhold = numpy.percentile(losses, cutoff * 100)
 
+        # Put all of the results into buckets based on their value for parameter1 / parameter2
+        resultsMerged = {}
         for result in results:
             if result[valueKey] is not None and result[valueKey] <= threshhold:
                 if isinstance(result[parameter1Key], float) or isinstance(result[parameter1Key], int) or isinstance(result[parameter1Key], bool):
                     if isinstance(result[parameter2Key], float) or isinstance(result[parameter2Key], int) or isinstance(result[parameter2Key], bool):
-                        xCoords.append(result[parameter1Key])
-                        yCoords.append(result[parameter2Key])
+                        key = (result[parameter1Key], result[parameter2Key])
 
-        plt.scatter(xCoords, yCoords)
+                        if key not in resultsMerged:
+                            resultsMerged[key] = []
+
+                        resultsMerged[key].append(result[valueKey])
+
+        losses = [numpy.min(vals) for key,vals in resultsMerged.items()]
+
+        xCoords = []
+        yCoords = []
+        scores = []
+
+        minVal = float(numpy.min(losses))
+        maxVal = float(numpy.max(losses))
+        redVal = float(numpy.percentile(losses, q=90))
+        yellowVal = float(numpy.percentile(losses, q=40))
+        greenVal = float(numpy.percentile(losses, q=20))
+        blueVal = float(numpy.percentile(losses, q=5))
+
+        redVal = (redVal - minVal) / (maxVal - minVal)
+        yellowVal = (yellowVal - minVal) / (maxVal - minVal)
+        greenVal = (greenVal - minVal) / (maxVal - minVal)
+        blueVal = (blueVal - minVal) / (maxVal - minVal)
+
+        green = numpy.array([0, 1, 0, 1])
+        yellow = numpy.array([1, 1, 0, 1])
+        red = numpy.array([1, 0, 0, 1])
+        blue = numpy.array([0.3, 0.3, 1, 1])
+
+        fig, ax = plt.subplots()
+
+        # We shuffle the results here because the scatter plot will by default draw later points over earlier ones, and later results will be on average better
+        # anyhow, skewing the graphic
+        resultsShuffled = list(results)
+        random.shuffle(resultsShuffled)
+        for key, resultScores in resultsMerged.items():
+            xCoords.append(key[0])
+            yCoords.append(key[1])
+            scores.append(float((numpy.min(resultScores) - minVal) / (maxVal - minVal)))
+
+        colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
+        plt.scatter(xCoords, yCoords, c=numpy.array(scores), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix_' + str(chartNumber), colorList, N=10240))
 
         plt.title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
 
@@ -214,75 +261,78 @@ class ResultsAnalyzer:
         plt.savefig(fileName, dpi=200)
         plt.close()
 
-
     def exportLossMatrixToCSV(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, reduction='min'):
         scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff, reduction=reduction)
 
         with open(fileName, 'wt') as file:
             writer = csv.writer(file)
-            param1Padding = int((len(parameter1Buckets)-1)/2)-1
-            param2Padding = int((len(parameter2Buckets)-1)/2)
+            param1Padding = int((len(parameter1Buckets) - 1) / 2) - 1
+            param2Padding = int((len(parameter2Buckets) - 1) / 2)
 
             writer.writerow([''] + ([''] * param2Padding) + [parameter2.root[5:]] + ([''] * (param2Padding)))
-            writer.writerow(['',''] + parameter2Buckets)
+            writer.writerow(['', ''] + parameter2Buckets)
             for rowIndex, row in enumerate(scores):
                 if rowIndex == param1Padding:
                     writer.writerow([parameter1.root[5:], str(parameter1Buckets[rowIndex])] + row)
                 else:
                     writer.writerow(['', str(parameter1Buckets[rowIndex])] + row)
 
-
     def exportLossMatrixToImage(self, fileName, results, parameter1, parameter2, valueKey='loss', title='Loss Matrix', cutoff=1.0, mode='global', reduction='min'):
+        chartNumber = self.chartNumber
+        self.chartNumber += 1
+
         scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff, reduction=reduction)
 
         minVal = float(numpy.min(scores))
         maxVal = float(numpy.max(scores))
-        redVal = float(numpy.percentile(scores, q=80))
-        yellowVal = float(numpy.percentile(scores, q=30))
-        greenVal = float(numpy.percentile(scores, q=10))
+        redVal = float(numpy.percentile(scores, q=90))
+        yellowVal = float(numpy.percentile(scores, q=40))
+        greenVal = float(numpy.percentile(scores, q=20))
+        blueVal = float(numpy.percentile(scores, q=5))
 
-        green = numpy.array(colors.rgb(0, 1, 0).hsv._color)
-        yellow = numpy.array(colors.rgb(1, 1, 0).hsv._color)
-        red = numpy.array(colors.rgb(1, 0, 0).hsv._color)
-        blue = numpy.array(colors.rgb(0.3, 0.3, 1).hsv._color)
+        if mode == 'global':
+            redVal = (redVal - minVal) / (maxVal - minVal)
+            yellowVal = (yellowVal - minVal) / (maxVal - minVal)
+            greenVal = (greenVal - minVal) / (maxVal - minVal)
+            blueVal = (blueVal - minVal) / (maxVal - minVal)
+        elif mode == 'response':
+            redVal = 0.9
+            yellowVal = 0.6
+            greenVal = 0.3
+            blueVal = 0.1
+
+        green = numpy.array([0, 1, 0])
+        yellow = numpy.array([1, 1, 0])
+        red = numpy.array([1, 0, 0])
+        blue = numpy.array([0.3, 0.3, 1])
 
         colorGrid = []
         for row in scores:
-            rowMinVal = float(numpy.min(row))
-            rowMaxVal = float(numpy.max(row))
-            rowRedVal = float(numpy.percentile(row, q=80))
-            rowYellowVal = float(numpy.percentile(row, q=30))
-            rowGreenVal = float(numpy.percentile(row, q=5))
-
             if mode == 'global':
-                rowMinVal = minVal
-                rowMaxVal = maxVal
-                rowRedVal = redVal
-                rowYellowVal = yellowVal
-                rowGreenVal = greenVal
+                colorRow = []
+                for score in row:
+                    colorRow.append(score)
+                colorGrid.append(colorRow)
+            else:
+                rowMinVal = float(numpy.min(row))
+                rowMaxVal = float(numpy.max(row))
 
-            colorRow = []
-            for score in row:
-                if score <= rowGreenVal:
-                    valRange = max(0.1, (rowGreenVal - rowMinVal))
-                    dist = (score - rowMinVal) / valRange
-                    color = colors.hsv(*(green * dist + blue * (1.0 - dist)))
-                elif score <= rowYellowVal:
-                    valRange = max(0.1, (rowYellowVal - rowGreenVal))
-                    dist = (score - rowGreenVal) / valRange
-                    color = colors.hsv(*(yellow * dist + green * (1.0 - dist)))
-                elif score <= rowRedVal:
-                    valRange = max(0.1, (rowMaxVal - rowYellowVal))
-                    dist = (score - rowYellowVal) / valRange
-                    color = colors.hsv(*(red * dist + yellow * (1.0 - dist)))
+                if rowMaxVal == rowMinVal:
+                    colorRow = [0.5] * len(row)
+                    colorGrid.append(colorRow)
                 else:
-                    color = colors.hsv(*(red))
-                colorRow.append(color.rgb._color)
-            colorGrid.append(colorRow)
+                    sortedRow = sorted(row)
+
+                    colorRow = []
+                    for score in row:
+                        colorRow.append(float(sortedRow.index(score)) / len(row))
+                    colorGrid.append(colorRow)
 
         fig, ax = plt.subplots()
 
-        im = ax.imshow(numpy.array(colorGrid, dtype=numpy.float32), interpolation='bicubic')
+        colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
+
+        im = ax.imshow(numpy.array(colorGrid, dtype=numpy.float32), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix' + str(chartNumber), colorList, N=10240), interpolation='bicubic')
 
         # We want to show all ticks...
         ax.set_xticks(numpy.arange(len(parameter2Buckets)))
@@ -299,7 +349,7 @@ class ResultsAnalyzer:
         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
         # Function which formats the text for display in each cell of heatmap
-        def getText(i,j):
+        def getText(i, j):
             cellText = str(roundPrecision(scores[i][j], 2))
             if cellText[:2] == '0.':
                 cellText = cellText[1:]  # Eliminate the 0 from 0.xx
@@ -312,18 +362,20 @@ class ResultsAnalyzer:
                 longest = max(len(getText(i, j)), longest)
 
         # Loop over data dimensions and create text annotations.
-        fontSize = int(12 - max(0, 1.25*(longest - 3)))
+        fontSize = int(12 - max(0, 1.25 * (longest - 3)))
         for i in range(len(parameter1Buckets)):
             for j in range(len(parameter2Buckets)):
-                ax.text(j, i, getText(i,j), ha="center", va="center", color="black", fontsize=fontSize)
+                ax.text(j, i, getText(i, j), ha="center", va="center", color="black", fontsize=fontSize)
 
         ax.set_title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
         plt.tight_layout()
         plt.savefig(fileName, dpi=200)
         plt.close()
 
-
     def exportSingleParameterLossChart(self, fileName, results, parameter, valueKey='loss', title='Loss Chart', cutoff=1.0, numBuckets=None):
+        chartNumber = self.chartNumber
+        self.chartNumber += 1
+
         values, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff, numBuckets)
 
         fig, ax = plt.subplots()
@@ -372,14 +424,13 @@ class ResultsAnalyzer:
             writer.writeheader()
             writer.writerows(newResults)
 
-
     def computeParameterResultValues(self, results, parameter, valueKey='loss', cutoff=1.0, numBuckets=None):
         mergedResults = {}
         for result in results:
             if isinstance(result[parameter.root[5:]], float) and result[valueKey] is not None:
                 value = result[parameter.root[5:]]
                 loss = result[valueKey]
-                key = str(roundPrecision(value,3))
+                key = str(roundPrecision(value, 3))
                 if key in mergedResults:
                     mergedResults[key].append(loss)
                 else:
@@ -389,7 +440,7 @@ class ResultsAnalyzer:
         values = [float(v[0]) for v in pairs]
         losses = [numpy.min(v[1]) for v in pairs]
 
-        threshhold = numpy.percentile(losses, cutoff*100)
+        threshhold = numpy.percentile(losses, cutoff * 100)
 
         filteredValues = []
         filteredLosses = []
@@ -410,7 +461,7 @@ class ResultsAnalyzer:
             for bucketIndex, bucket in enumerate(buckets):
                 bucketLosses = []
                 for valueIndex, value in enumerate(filteredValues):
-                    if (bucketIndex == 0 and value < bucket) or (value >= buckets[bucketIndex-1] and value < bucket):
+                    if (bucketIndex == 0 and value < bucket) or (value >= buckets[bucketIndex - 1] and value < bucket):
                         bucketLosses.append(filteredLosses[valueIndex])
                 if len(bucketLosses) > 0:
                     newLosses.append(numpy.mean(bucketLosses))
@@ -419,8 +470,8 @@ class ResultsAnalyzer:
             filteredLosses = newLosses
 
         bottom = numpy.min(filteredValues)
-        top = numpy.max(filteredValues)+1e-5
-        trendLineXCoords = numpy.arange(bottom, top, (top-bottom)/100)
+        top = numpy.max(filteredValues) + 1e-5
+        trendLineXCoords = numpy.arange(bottom, top, (top - bottom) / 100)
 
         # If there are at least two results, we can fit a linear trend line
         linearTrendValues = None
@@ -447,7 +498,8 @@ class ResultsAnalyzer:
                         return a * numpy.exp(-b * x) + c
 
                     warnings.simplefilter('ignore', scipy.optimize.OptimizeWarning)
-                    popt, pcov = scipy.optimize.curve_fit(exponenial_func, filteredValues, filteredLosses, p0=(1, start_b, 1), bounds=([-numpy.inf, -abs(start_b * 1e1), -numpy.inf], [+numpy.inf, +abs(start_b * 1e1), +numpy.inf]))
+                    popt, pcov = scipy.optimize.curve_fit(exponenial_func, filteredValues, filteredLosses, p0=(1, start_b, 1),
+                                                          bounds=([-numpy.inf, -abs(start_b * 1e1), -numpy.inf], [+numpy.inf, +abs(start_b * 1e1), +numpy.inf]))
                     exponentialTrendValues = exponenial_func(numpy.array(filteredValues).copy(), *popt)
                     exponentialTrendLine = exponenial_func(numpy.array(trendLineXCoords).copy(), *popt)
 
@@ -468,7 +520,8 @@ class ResultsAnalyzer:
 
         newResults = sorted(newResults, key=lambda val: val[parameter.root[5:]])
 
-        return newResults, list(zip(trendLineXCoords, linearTrendLine)) if exponentialTrendLine is not None else None, list(zip(trendLineXCoords, exponentialTrendLine)) if exponentialTrendLine is not None else None
+        return newResults, list(zip(trendLineXCoords, linearTrendLine)) if exponentialTrendLine is not None else None, list(
+            zip(trendLineXCoords, exponentialTrendLine)) if exponentialTrendLine is not None else None
 
     def computeCorrelations(self, optimizer):
         keys = Hyperparameter(optimizer.config.data['hyperparameters']).getFlatParameterNames()
@@ -571,9 +624,8 @@ class ResultsAnalyzer:
             by plotting them on a grid and coloring them.
         """
         losses = [numpy.min(v[valueKey]) for v in results if v[valueKey] is not None]
-        threshhold = numpy.percentile(losses, cutoff*100)
+        threshhold = numpy.percentile(losses, cutoff * 100)
         filteredResults = [result for result in results if result[valueKey] is not None and result[valueKey] < threshhold]
-
 
         # Divide the range up into 100 parts
         numBuckets = 10
@@ -664,7 +716,3 @@ class ResultsAnalyzer:
                 newScoreGrid[rowIndex][columnIndex] = roundPrecision(newScoreGrid[rowIndex][columnIndex])
 
         return newScoreGrid, parameter1Buckets, parameter2Buckets
-
-
-
-
