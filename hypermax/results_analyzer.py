@@ -228,10 +228,16 @@ class ResultsAnalyzer:
         greenVal = float(numpy.percentile(losses, q=20))
         blueVal = float(numpy.percentile(losses, q=5))
 
-        redVal = (redVal - minVal) / (maxVal - minVal)
-        yellowVal = (yellowVal - minVal) / (maxVal - minVal)
-        greenVal = (greenVal - minVal) / (maxVal - minVal)
-        blueVal = (blueVal - minVal) / (maxVal - minVal)
+        if (maxVal - minVal) > 0:
+            redVal = (redVal - minVal) / (maxVal - minVal)
+            yellowVal = (yellowVal - minVal) / (maxVal - minVal)
+            greenVal = (greenVal - minVal) / (maxVal - minVal)
+            blueVal = (blueVal - minVal) / (maxVal - minVal)
+        else:
+            redVal = 0.9
+            yellowVal = 0.6
+            greenVal = 0.3
+            blueVal = 0.1
 
         green = numpy.array([0, 1, 0, 1])
         yellow = numpy.array([1, 1, 0, 1])
@@ -247,7 +253,10 @@ class ResultsAnalyzer:
         for key, resultScores in resultsMerged.items():
             xCoords.append(key[0])
             yCoords.append(key[1])
-            scores.append(float((numpy.min(resultScores) - minVal) / (maxVal - minVal)))
+            if (maxVal - minVal) > 0:
+                scores.append(float((numpy.min(resultScores) - minVal) / (maxVal - minVal)))
+            else:
+                scores.append(float((numpy.min(resultScores) - minVal)))
 
         colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
         plt.scatter(xCoords, yCoords, c=numpy.array(scores), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix_' + str(chartNumber), colorList, N=10240))
@@ -291,10 +300,16 @@ class ResultsAnalyzer:
         blueVal = float(numpy.percentile(scores, q=5))
 
         if mode == 'global':
-            redVal = (redVal - minVal) / (maxVal - minVal)
-            yellowVal = (yellowVal - minVal) / (maxVal - minVal)
-            greenVal = (greenVal - minVal) / (maxVal - minVal)
-            blueVal = (blueVal - minVal) / (maxVal - minVal)
+            if (maxVal - minVal) > 0:
+                redVal = (redVal - minVal) / (maxVal - minVal)
+                yellowVal = (yellowVal - minVal) / (maxVal - minVal)
+                greenVal = (greenVal - minVal) / (maxVal - minVal)
+                blueVal = (blueVal - minVal) / (maxVal - minVal)
+            else:
+                redVal = 0.9
+                yellowVal = 0.6
+                greenVal = 0.3
+                blueVal = 0.1
         elif mode == 'response':
             redVal = 0.9
             yellowVal = 0.6
