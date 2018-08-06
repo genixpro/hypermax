@@ -84,6 +84,12 @@ class ResultsAnalyzer:
                 self.exportLossMatrixToImage(os.path.join(subDirectory, lossImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Loss Matrix (top 10 percent, ' + reduction + ')', cutoff=0.1, reduction=reduction)
                 self.exportLossMatrixToImage(os.path.join(subDirectory, responseImageTop10PercentFilename), results, parameter1, parameter2, 'loss', 'Response Matrix (top 10 percent, ' + reduction + ')', cutoff=0.1, mode='response', reduction=reduction)
 
+
+            scatterFilename = 'scatter_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+            scatterTop10PercentFilename = 'scatter_top_10_percent' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
+            self.exportTwoParameterScatter(os.path.join(subDirectory, scatterFilename), results, parameter1, parameter2, 'loss', cutoff=1.0, title='Scatter Chart')
+            self.exportTwoParameterScatter(os.path.join(subDirectory, scatterTop10PercentFilename), results, parameter1, parameter2, 'loss', cutoff=0.1, title='Scatter Chart (top 10 percent)')
+
             timeCsvFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
             timeImageFilename = 'time_matrix_' + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
 
@@ -178,6 +184,37 @@ class ResultsAnalyzer:
             writer.writerows(data)
 
 
+    def exportTwoParameterScatter(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, title="Scatter"):
+        xCoords = []
+        yCoords = []
+
+        losses = [result[valueKey] for result in results if result[valueKey] is not None]
+        threshhold = numpy.percentile(losses, cutoff*100)
+
+        parameter1Key = parameter1.root[5:]
+        parameter2Key = parameter2.root[5:]
+
+        fig, ax = plt.subplots()
+
+        for result in results:
+            if result[valueKey] is not None and result[valueKey] <= threshhold:
+                if isinstance(result[parameter1Key], float) or isinstance(result[parameter1Key], int) or isinstance(result[parameter1Key], bool):
+                    if isinstance(result[parameter2Key], float) or isinstance(result[parameter2Key], int) or isinstance(result[parameter2Key], bool):
+                        xCoords.append(result[parameter1Key])
+                        yCoords.append(result[parameter2Key])
+
+        plt.scatter(xCoords, yCoords)
+
+        plt.title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
+
+        ax.set_xlabel(parameter1Key)
+        ax.set_ylabel(parameter2Key)
+
+        plt.tight_layout()
+        plt.savefig(fileName, dpi=200)
+        plt.close()
+
+
     def exportLossMatrixToCSV(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, reduction='min'):
         scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff, reduction=reduction)
 
@@ -255,6 +292,9 @@ class ResultsAnalyzer:
         ax.set_xticklabels(parameter2Buckets)
         ax.set_yticklabels(parameter1Buckets)
 
+        ax.set_xlabel(parameter1.root[5:])
+        ax.set_ylabel(parameter2.root[5:])
+
         # Rotate the tick labels and set their alignment.
         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
@@ -278,13 +318,15 @@ class ResultsAnalyzer:
                 ax.text(j, i, getText(i,j), ha="center", va="center", color="black", fontsize=fontSize)
 
         ax.set_title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
-        fig.tight_layout()
+        plt.tight_layout()
         plt.savefig(fileName, dpi=200)
         plt.close()
 
 
     def exportSingleParameterLossChart(self, fileName, results, parameter, valueKey='loss', title='Loss Chart', cutoff=1.0, numBuckets=None):
         values, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff, numBuckets)
+
+        fig, ax = plt.subplots()
 
         plt.title(title + " for " + parameter.root[5:])
 
@@ -295,6 +337,9 @@ class ResultsAnalyzer:
 
         xCoords = [value[parameter.root[5:]] for value in values]
         yCoords = [value[valueKey] for value in values]
+
+        ax.set_xlabel(parameter.root[5:])
+        ax.set_ylabel(valueKey)
 
         plt.scatter(xCoords, yCoords)
 
@@ -315,6 +360,7 @@ class ResultsAnalyzer:
         plt.xlim(xlim)
         plt.ylim(ylim)
 
+        plt.tight_layout()
         plt.savefig(fileName, dpi=200)
         plt.close()
 
@@ -546,13 +592,13 @@ class ResultsAnalyzer:
         for result in results:
             if result[valueKey] is None:
                 continue
-            paramater1Key = parameter1.root[5:]
-            paramater2Key = parameter2.root[5:]
+            parameter1Key = parameter1.root[5:]
+            parameter2Key = parameter2.root[5:]
 
-            if isinstance(result[paramater1Key], float) or isinstance(result[paramater1Key], int) or isinstance(result[paramater1Key], bool):
-                if isinstance(result[paramater2Key], float) or isinstance(result[paramater2Key], int) or isinstance(result[paramater2Key], bool):
-                    parameter1Value = float(result[paramater1Key])
-                    parameter2Value = float(result[paramater2Key])
+            if isinstance(result[parameter1Key], float) or isinstance(result[parameter1Key], int) or isinstance(result[parameter1Key], bool):
+                if isinstance(result[parameter2Key], float) or isinstance(result[parameter2Key], int) or isinstance(result[parameter2Key], bool):
+                    parameter1Value = float(result[parameter1Key])
+                    parameter2Value = float(result[parameter2Key])
 
                     parameter1Index = None
                     for index1, value1 in enumerate(parameter1Buckets):
