@@ -2,7 +2,7 @@
 
 Hypermax is a power tool for optimizing algorithms. It builds on the powerful TPE algorithm by James Bergstra with additional features
 meant to help you get to your optimal hyper parameters faster and easier. Hypermax automatically gives you a variety of charts and graphs
-based on your hyperparameter results. Hypermax can be restarted easily in-case of a crash. Hypermax can even monitor the CPU and RAM usage
+based on your hyperparameter results. Hypermax can be restarted easily in-case of a crash. Hypermax can monitor the CPU and RAM usage
 of your algorithms - automatically killing your process if it takes too long to execute or uses too much RAM. Hypermax even has a UI.
 Hypermax makes it easier and faster to get to those high performing hyper-parameters that you crave so much. Start optimizing today!
 
