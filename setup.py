@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='hypermax',
-    version='0.1.1',
+    version='0.1.2',
     description='Better, faster hyperparameter optimization by mixing the best of humans and machines.',
     long_description=long_description,
     long_description_content_type="text/markdown",
