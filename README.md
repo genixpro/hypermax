@@ -95,7 +95,7 @@ Pulling it all together, you create a file like this search.json, defining your 
         },
         "function": {
             "type": "python_function",
-            "src": "model.py",
+            "module": "model.py",
             "name": "trainModel"
         },
         "search": {
