@@ -7,6 +7,7 @@ import time
 import numpy.random
 import threading
 import queue
+import copy
 import random
 import concurrent.futures
 import functools
@@ -37,6 +38,7 @@ class Optimizer:
         self.resultsAnalyzer = ResultsAnalyzer(configuration)
 
         self.results = []
+        self.resultFutures = []
 
         self.best = None
         self.bestLoss = None
@@ -45,7 +47,10 @@ class Optimizer:
 
         self.totalTrials = 1000
         self.trialsSinceDetailedResults = 0
-        self.resultsFuture = None
+        self.resultsExportFuture = None
+
+        self.currentTrials = []
+
 
     def __del__(self):
         self.threadExecutor.shutdown(wait=True)
@@ -71,11 +76,27 @@ class Optimizer:
 
         return params
 
+    def computeCurrentBest(self):
+        best = None
+        bestLoss = None
+        for result in self.results:
+            if best is None or (result['loss'] is not None and result['loss'] < bestLoss):
+                best = result
+                bestLoss = result['loss']
+        self.best = best
+        self.bestLoss = bestLoss
+
     def runOptimizationRound(self):
         jobs = self.config.data['function'].get('parallel', 4)
         samples = [self.sampleNext() for job in range(jobs)]
 
         def testSample(params, trial):
+            currentTrial = {
+                "start": datetime.datetime.now(),
+                "trial": trial,
+                "params": copy.deepcopy(params)
+            }
+            self.currentTrials.append(currentTrial)
             start = datetime.datetime.now()
             execution = Execution(self.config.data['function'], parameters=params)
             modelResult = execution.run()
@@ -122,6 +143,9 @@ class Optimizer:
             for key in params.keys():
                 value = params[key]
                 recurse(key, value, '')
+
+            self.currentTrials.remove(currentTrial)
+
             return result
 
         futures = []
@@ -132,17 +156,14 @@ class Optimizer:
 
         results = [future.result() for future in futures]
 
-        for result in results:
-            if self.best is None or (result['loss'] is not None and result['loss'] < self.bestLoss):
-                self.bestLoss = result['loss']
-                self.best = result
-
         self.results = self.results + results
+
+        self.computeCurrentBest()
 
         self.trialsSinceDetailedResults += len(results)
 
-        if self.resultsFuture is None or self.resultsFuture.done() and len(self.results)>5:
-            self.resultsFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
+        if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results)>5):
+            self.resultsExportFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
         else:
             self.resultsAnalyzer.outputResultsFolder(self, False)
 
@@ -155,7 +176,8 @@ class Optimizer:
         atexit.register(lambda: self.resultsAnalyzer.outputResultsFolder(self, False))
         while len(self.results) < self.totalTrials:
             self.runOptimizationRound()
-        self.resultsAnalyzer.outputResultsFolder(self, True)
+        # We are completed, so we can allocate a full contingent of workers
+        self.resultsAnalyzer.outputResultsFolder(self, True, workers=4)
 
     def convertTrialsToResults(self, trials):
         results = []
@@ -216,7 +238,7 @@ class Optimizer:
 
     def exportResultsCSV(self, fileName):
         with open(fileName, 'wt') as file:
-            writer = csv.DictWriter(file, fieldnames=self.results[0].keys(), dialect='unix')
+            writer = csv.DictWriter(file, fieldnames=self.results[0].keys() if len(self.results) > 0 else [], dialect='unix')
             writer.writeheader()
             writer.writerows(self.results)
 
@@ -244,3 +266,4 @@ class Optimizer:
                         newResult[key] = None
                 newResults.append(newResult)
             self.results = newResults
+        self.computeCurrentBest()

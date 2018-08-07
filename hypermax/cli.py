@@ -22,10 +22,11 @@ def main():
 
     if args.results_directory:
         optimizer.importResultsCSV(os.path.join(args.results_directory, 'results.csv'))
+        optimizer.resultsAnalyzer.directory = args.results_directory
     else:
         # See if we see the results directory here.
         directories = os.listdir('.')
-        resultsDirectories = sorted([directory for directory in directories if directory.startswith('results_')])
+        resultsDirectories = sorted([directory for directory in directories if directory.startswith('results_')], key=lambda dir: int(dir[len('result_')+1:]))
         resultsDirectories.reverse() # Reversed - examine the latest results directories first
         for directory in resultsDirectories:
             if os.path.exists(os.path.join(directory, 'search.json')):
@@ -37,6 +38,7 @@ def main():
                     prompt = input('It appears there was already an in-progress search with this configuration. Would you like to continue the existing hyper parameter search (' + directory + ")? [yes/no/y/n]\n")
                     if 'y' in prompt:
                         optimizer.importResultsCSV(os.path.join(directory, 'results.csv'))
+                        optimizer.resultsAnalyzer.directory = directory
                     break
 
     optimizer.runOptimization()

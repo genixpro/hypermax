@@ -14,11 +14,29 @@ import matplotlib.pyplot as plt
 import concurrent.futures
 import colors
 import traceback
+import functools
 import warnings
 import scipy.optimize
 import random
 import json
 
+
+def handleChartException(function):
+    """
+        A decorator that wraps the given chart-generation function and handles and exceptions that might have been thrown during.
+
+        Said exceptions are ignored except when developing since they usually come from poor data that isn't useful to plot anyhow
+    """
+
+    @functools.wraps(function)
+    def wrapper(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except Exception as e:
+            pass
+            # raise # reraise the exception and allow it to bubble so developers can catch why the charts aren't being generated.
+
+    return wrapper
 
 
 class ResultsAnalyzer:
@@ -42,7 +60,8 @@ class ResultsAnalyzer:
         self.directory = resultsConfig['results_directory'] + "_" + str(increment)
 
         self.fig = None
-        self.chartNumber = 0
+        self.completedCharts = 0
+        self.totalCharts = 0
 
     @classmethod
     def configurationSchema(self):
@@ -141,7 +160,9 @@ class ResultsAnalyzer:
             traceback.print_exc()
             return e
 
-    def outputResultsFolder(self, optimizer, detailed=True):
+    def outputResultsFolder(self, optimizer, detailed=True, workers=1):
+        parameters = Hyperparameter(optimizer.config.data['hyperparameters']).getFlatParameters()
+
         # Ensure the directory we want to store results in is there
         self.makeDirs(self.directory)
 
@@ -151,18 +172,27 @@ class ResultsAnalyzer:
         with open(os.path.join(self.directory, 'search.json'), 'wt') as paramsFile:
             json.dump(optimizer.config.data, paramsFile, indent=4, sort_keys=True)
 
+        if optimizer.best:
+            with open(os.path.join(self.directory, 'best.json'), 'wt') as paramsFile:
+                json.dump(optimizer.best, paramsFile, indent=4, sort_keys=True)
+
         if len(optimizer.results) > 5:
             correlationsFile = os.path.join(self.directory, 'correlations.csv')
             self.exportCorrelationsToCSV(correlationsFile, optimizer)
 
+        def onChartCompleted(e):
+            self.completedCharts += 1
+
         # Only do these results if detailed is enabled, since they take a lot more computation
         if len(optimizer.results) > 5 and detailed:
-            parameters = Hyperparameter(optimizer.config.data['hyperparameters']).getFlatParameters()
+            self.completedCharts = 0
+            self.totalCharts = 0
+            self.totalCharts = len(parameters) + (len(parameters) - 1) * (len(parameters) - 1)
 
             # We use concurrent.futures.ProcessThreadPool here for two reasons. One for speed (since generating the images can be slow)
             # The other is because  matplotlib is not inherently thread safe.
             futures = []
-            with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
                 for parameter1 in parameters:
                     # self.generateSingleParameterExports(list(optimizer.results), parameter1)
                     futures.append(executor.submit(self.generateSingleParameterExports, list(optimizer.results), parameter1))
@@ -172,11 +202,14 @@ class ResultsAnalyzer:
                                 if parameter1.root != parameter2.root:
                                     # self.generateMultiParameterExports(list(optimizer.results), parameter1, parameter2)
                                     futures.append(executor.submit(self.generateMultiParameterExports, list(optimizer.results), parameter1, parameter2))
+                for future in futures:
+                    future.add_done_callback(onChartCompleted)
             for future in futures:
                 if future.result() is not None:
                     print(traceback.format_exception_only(Exception, future.result()))
                     raise future.result()
 
+    @handleChartException
     def exportCorrelationsToCSV(self, fileName, optimizer):
         matrix, labels = self.computeCorrelations(optimizer)
 
@@ -196,10 +229,8 @@ class ResultsAnalyzer:
             writer.writeheader()
             writer.writerows(data)
 
+    @handleChartException
     def exportTwoParameterScatter(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, title="Scatter"):
-        chartNumber = self.chartNumber
-        self.chartNumber += 1
-
         parameter1Key = parameter1.root[5:]
         parameter2Key = parameter2.root[5:]
 
@@ -279,7 +310,7 @@ class ResultsAnalyzer:
             plt.yscale('linear')
 
         colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
-        plt.scatter(xCoords, yCoords, c=numpy.array(scores), s=numpy.array(sizes), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix_' + str(chartNumber), colorList, N=50000), alpha=0.7)
+        plt.scatter(xCoords, yCoords, c=numpy.array(scores), s=numpy.array(sizes), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix', colorList, N=50000), alpha=0.7)
 
         plt.title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
 
@@ -290,6 +321,7 @@ class ResultsAnalyzer:
         plt.savefig(fileName, dpi=200)
         plt.close()
 
+    @handleChartException
     def exportLossMatrixToCSV(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, reduction='min'):
         scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff, reduction=reduction)
 
@@ -311,10 +343,8 @@ class ResultsAnalyzer:
             writer.writerow(['', '', ''] + parameter1Buckets)
             writer.writerow(['', ''] + ([''] * param1Padding) + [parameter1.root[5:]] + ([''] * (param1Padding)))
 
+    @handleChartException
     def exportLossMatrixToImage(self, fileName, results, parameter1, parameter2, valueKey='loss', title='Loss Matrix', cutoff=1.0, mode='global', reduction='min'):
-        chartNumber = self.chartNumber
-        self.chartNumber += 1
-
         scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff, reduction=reduction)
 
         minVal = float(numpy.min(scores))
@@ -372,7 +402,7 @@ class ResultsAnalyzer:
 
         colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
 
-        im = ax.imshow(colorGrid, cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix' + str(chartNumber), colorList, N=50000), interpolation='quadric')
+        im = ax.imshow(colorGrid, cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix', colorList, N=50000), interpolation='quadric')
 
         # We want to show all ticks...
         ax.set_xticks(numpy.arange(len(parameter1Buckets))-0.5)
@@ -416,10 +446,8 @@ class ResultsAnalyzer:
         plt.savefig(fileName, dpi=200)
         plt.close()
 
+    @handleChartException
     def exportSingleParameterLossChart(self, fileName, results, parameter, valueKey='loss', title='Loss Chart', cutoff=1.0, numBuckets=None):
-        chartNumber = self.chartNumber
-        self.chartNumber += 1
-
         values, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff, numBuckets)
 
         fig, ax = plt.subplots()
@@ -460,6 +488,7 @@ class ResultsAnalyzer:
         plt.savefig(fileName, dpi=200)
         plt.close()
 
+    @handleChartException
     def exportSingleParameterLossCSV(self, fileName, results, parameter, valueKey='loss', numBuckets=None):
         newResults, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff=1.0, numBuckets=numBuckets)
 
@@ -669,8 +698,11 @@ class ResultsAnalyzer:
         if len(discrete) <= numBuckets:
             # Add in one additional bucket on the low end.
             buckets = sorted(list(discrete))
-            diff = buckets[1] - buckets[0]
-            bottom = bottom - diff
+            if len(buckets) > 1:
+                diff = buckets[1] - buckets[0]
+                bottom = bottom - diff
+            else:
+                bottom = buckets[0] - 1.0
 
         buckets = []
         if parameter.config['scaling'] == 'linear':
@@ -680,7 +712,10 @@ class ResultsAnalyzer:
                 buckets = buckets + [buckets[-1] + (domain / numBuckets)]
         elif parameter.config['scaling'] == 'logarithmic':
             logMax = math.log(top)
-            logMin = math.log(bottom)
+            if bottom > 0:
+                logMin = math.log(bottom)
+            else:
+                logMin = math.log(1e-7)
             domain = logMax - logMin
 
             logBuckets = [logMin]

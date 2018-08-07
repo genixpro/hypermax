@@ -6,6 +6,7 @@ import sys
 import os.path
 import csv
 import yaml
+import datetime
 import json
 from panwid import DataTable, DataTableColumn
 from hypermax.hyperparameter import Hyperparameter
@@ -74,7 +75,7 @@ class ExportCSVPopup(urwid.WidgetWrap):
         self.optimizer = optimizer
 
     def saveResults(self):
-        self.optimizer.exportCSV(self.edit.edit_text)
+        self.optimizer.exportResultsCSV(self.edit.edit_text)
         self._emit('close')
 
 
@@ -113,7 +114,7 @@ class CorrelationGridPopup(urwid.WidgetWrap):
     """A dialog that appears with nothing but a close button """
     def __init__(self, optimizer):
 
-        matrix, labels = optimizer.computeCorrelations()
+        matrix, labels = optimizer.resultsAnalyzer.computeCorrelations(optimizer)
 
         columns = [DataTableColumn('field', label='field', width=16, align="right", attr="body", padding=0)]
         for label in labels:
@@ -144,7 +145,7 @@ class CorrelationGridPopup(urwid.WidgetWrap):
 
         buttons = urwid.Filler(urwid.Columns([close_button, export_button]))
 
-        super(CorrelationGridPopup, self).__init__(makeMountedFrame(urwid.Pile([table, (5, buttons)]), 'Export File'))
+        super(CorrelationGridPopup, self).__init__(makeMountedFrame(urwid.Pile([(5, buttons), table]), 'Export File'))
 
         self.optimizer = optimizer
 
@@ -252,20 +253,18 @@ def launchHypermaxUI(optimizer):
         else:
             popupContainer.open_pop_up_with_widget(MessagePopup('There is no best model to export yes.'), size=(('relative', 95), ('relative', 95)))
 
-    def exportDetailedResults():
-        optimizer.resultsAnalyzer.outputResultsFolder(optimizer)
-
     popupContainer = None
     graph = None
     graphVscale = None
     graphColumns = None
-    status = None
+    currentTrialsLeft = None
+    currentTrialsMiddle = None
+    currentTrialsRight = None
     currentBestLeft = None
     currentBestRight = None
     def makeMainMenu():
         content = [
             urwid.AttrWrap(urwid.Button("Export Results to CSV", on_press=lambda button: popupContainer.open_pop_up_with_widget(ExportCSVPopup(optimizer))), 'body', focus_attr='focus'),
-            urwid.AttrWrap(urwid.Button("Export Detailed Results", on_press=lambda button: exportDetailedResults()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('View Hyperparameter Correlations', on_press=lambda button: viewHyperparameterCorrelations()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('Export Best Hyperparameters to File', on_press=lambda button: exportBestParameters()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('Exit', on_press=onExitClicked), 'body', focus_attr='focus')
@@ -289,10 +288,13 @@ def launchHypermaxUI(optimizer):
         graphFrame = makeMountedFrame(graphColumns, 'Rolling Loss')
         return graphFrame
 
-    def makeStatusArea():
-        nonlocal status
-        status = urwid.AttrWrap(urwid.Text(markup=''), 'body')
-        return makeMountedFrame(urwid.Filler(status), "Status")
+    def makeCurrentTrialsArea():
+        nonlocal currentTrialsLeft,currentTrialsMiddle, currentTrialsRight
+        currentTrialsLeft = urwid.AttrWrap(urwid.Text(markup=''), 'body')
+        currentTrialsMiddle = urwid.AttrWrap(urwid.Text(markup=''), 'body')
+        currentTrialsRight = urwid.AttrWrap(urwid.Text(markup=''), 'body')
+        columns = urwid.Columns([currentTrialsLeft, currentTrialsMiddle, currentTrialsRight])
+        return makeMountedFrame(urwid.Filler(columns), "Status")
 
     def makeCurrentBestArea():
         nonlocal currentBestLeft, currentBestRight
@@ -357,7 +359,7 @@ def launchHypermaxUI(optimizer):
 
     columns = urwid.Columns([makeMainMenu(), currentBestArea])
 
-    statusArea = makeStatusArea()
+    currentTrialsArea = makeCurrentTrialsArea()
     graphArea = makeGraphArea()
     trialsArea = makeTrialsView()
 
@@ -366,15 +368,15 @@ def launchHypermaxUI(optimizer):
     def showLossGraph(widget):
         bottomArea.contents[1] = (graphArea, (urwid.WEIGHT, 1))
 
-    def showStatus(widget):
-        bottomArea.contents[1] = (statusArea, (urwid.WEIGHT, 1))
+    def showCurrentTrials(widget):
+        bottomArea.contents[1] = (currentTrialsArea, (urwid.WEIGHT, 1))
 
     def showTrials(widget):
         bottomArea.contents[1] = (trialsArea, (urwid.WEIGHT, 1))
 
     bottomButtons = urwid.Columns([
         urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Loss', on_press=showLossGraph), 'tab_buttons'), left=1, right=5)),
-        urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Status', on_press=showStatus), 'tab_buttons'), left=5, right=5)),
+        urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Current Trials', on_press=showCurrentTrials), 'tab_buttons'), left=5, right=5)),
         urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Trials', on_press=showTrials), 'tab_buttons'), left=5, right=1)),
     ])
 
@@ -405,14 +407,49 @@ def launchHypermaxUI(optimizer):
             if keys:
                 loop.process_input(keys)
 
-            statusText = "Completed: " + str(optimizer.completed()) + "/" + str(optimizer.totalTrials)
-            status.set_text(statusText)
-
             def formatParamVal(value):
                 if isinstance(value, float):
                     return float('{:.4E}'.format(value))
                 else:
                     return value
+
+            currentTrialsLeftText = ""
+            currentTrialsMiddleText = ""
+            currentTrialsRightText = ""
+            for trial in optimizer.currentTrials:
+                trial = trial
+
+                paramKeys = sorted(list(trial['params'].keys()))
+
+                leftCutoff = int((len(paramKeys)+1)/3)
+                middleCutoff = int((len(paramKeys)+1)*2/3)
+
+                leftParamKeys = paramKeys[:leftCutoff]
+                middleParamKeys = paramKeys[leftCutoff:middleCutoff]
+                rightParamKeys = paramKeys[middleCutoff:]
+
+                runningTime = (datetime.datetime.now() - trial['start']).total_seconds()
+
+                leftText = "Time: " + str(formatParamVal(runningTime)) + " seconds\n\n"
+                middleText = "Trial: #" + str(trial['trial']) + " \n\n"
+                rightText = "\n"
+
+                leftText += yaml.dump({key:formatParamVal(trial['params'][key]) for key in leftParamKeys}, default_flow_style=False)
+                middleText += yaml.dump({key:formatParamVal(trial['params'][key]) for key in middleParamKeys}, default_flow_style=False)
+                rightText += yaml.dump({key:formatParamVal(trial['params'][key]) for key in rightParamKeys}, default_flow_style=False)
+
+                lines = max(leftText.count("\n"), middleText.count("\n"), rightText.count("\n"))
+                leftText += "\n" * (lines - leftText.count("\n"))
+                middleText += "\n" * (lines - middleText.count("\n"))
+                rightText += "\n" * (lines - rightText.count("\n"))
+
+                currentTrialsLeftText += leftText
+                currentTrialsMiddleText += middleText
+                currentTrialsRightText += rightText
+
+            currentTrialsLeft.set_text(currentTrialsLeftText)
+            currentTrialsMiddle.set_text(currentTrialsMiddleText)
+            currentTrialsRight.set_text(currentTrialsRightText)
 
             if optimizer.best:
                 paramKeys = [key for key in optimizer.best.keys() if key not in optimizer.resultInformationKeys]
@@ -426,6 +463,10 @@ def launchHypermaxUI(optimizer):
 
                 bestLeftText += "\n\nLoss: " + str(optimizer.bestLoss)
                 bestRightText += "\n\nTime: " + str(optimizer.best['time']) + " (s)"
+                bestLeftText += "\nTrials: " + str(optimizer.completed()) + "/" + str(optimizer.totalTrials)
+
+                if optimizer.resultsAnalyzer.totalCharts > 0 and optimizer.resultsAnalyzer.completedCharts < optimizer.resultsAnalyzer.totalCharts:
+                    bestRightText += "\nCharts: " + str(optimizer.resultsAnalyzer.completedCharts) + "/" + str(optimizer.resultsAnalyzer.totalCharts)
 
                 currentBestLeft.set_text(bestLeftText)
                 currentBestRight.set_text(bestRightText)
@@ -487,10 +528,10 @@ def launchHypermaxUI(optimizer):
                 graphColumns.contents[0] = (urwid.Padding(graphVscale, left=0, right=1), (urwid.GIVEN, 7, False))
                 graphColumns.contents[2] = (urwid.Padding(graphVscale, left=1, right=0), (urwid.GIVEN, 7, False))
 
-            if len(optimizer.results) > 0:
-                if optimizer.results[-1]['status'] != 'ok':
-                    statusText += optimizer.results[-1]['log']
-                    status.set_text(statusText)
+            # if len(optimizer.results) > 0:
+            #     if optimizer.results[-1]['status'] != 'ok':
+            #         statusText += optimizer.results[-1]['log']
+            #         status.set_text(statusText)
 
 
     except urwid.ExitMainLoop:

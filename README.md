@@ -358,12 +358,10 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
     - Control random seed and ensure that runs are reproducible
 - General User Interface:
     - Change User-Interface code to use proper organized classes and not ad-hoc style like it is currently
-    - View currently running models
     - View recently trained models
     - View models which had errors
     - Fix UI issues related to data-tables (such as in hyperparameter correlations)
     - Able to adjust min,max,smoothing, and domain of the loss chart
-    - Move status information to top-right.
     - Predict model execution time based on hyper-parameters and prior data
     - Progress-bar on model training
     - Can change the file-name when exporting the hyper-parameter correlations
@@ -391,7 +389,6 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
     - Convenient way to add in peak or median RAM (and GPU RAM) as an additional loss on your model
     - Convenient way to add in disk / network usage as a additional loss on your model
 - Tools for Hyperparameter Tuning:
-    - View a hotspot grid between two hyper-parameters, to see the sensitive areas
     - Improve feature-vector design for hyper-parameter correlations
     - Edit / change the hyper-parameter space while the model is running
     - Estimate the cardinality of the search-space
@@ -407,7 +404,6 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
     - Integrate grid-search as an alternative to TPE
     - Integrate genetic-algo as an alternative to TPE
 - Command-line interface
-    - Provide existing results file to continue optimizing existing model (after crash)
     - Execute model without CUI
     - Sample next hyper-parameters to test
     - Export all of the existing types of result-analysis (correlations, hotspot-grids, param vs loss, etc..)
