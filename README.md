@@ -3,6 +3,8 @@
 Hypermax is hyperparameter optimization on steroids. Hypermax wraps the TPE algorithm within Hyperopt
 with powerful additional features.
 
+![Screenshot of Hypermax](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/main_screen.png "Screenshot of Hypermax")
+
 # Installation
 
 Install using pip:
