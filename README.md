@@ -334,7 +334,6 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
     - Autokill models that take too much GPU RAM
     - Autokill models that take too much Disk / Network (not sure about this one)
     - Fix bug related to using too many file handlers.
-    - Automatically keep logs / errors for models executing
     - Execute model as an executable
     - Execute model remotely, through ssh
     - Execute model by sending a message through message-buffer like RabbitMQ or Kafka (receive results same way)
@@ -352,7 +351,6 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
     - Able to have "unbounded" hyperparameters (only when using iterative optimization, since TPE doesn't inherently do this)
     - Ability to have hyper-parameters within arrays, such as a list of layers
 - Reliability:
-    - Able to restart tuning where left off if hypermax crashes
     - Hypermax saves results / reloads from where it left off by default
     - Try to lock in package versions related to Hyperopt so people don't have problems on installation
     - Need a better way of handling exceptions that happen in UI code

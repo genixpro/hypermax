@@ -17,6 +17,7 @@ import traceback
 import warnings
 import scipy.optimize
 import random
+import json
 
 
 
@@ -147,6 +148,9 @@ class ResultsAnalyzer:
         resultsFile = os.path.join(self.directory, 'results.csv')
         optimizer.exportResultsCSV(resultsFile)
 
+        with open(os.path.join(self.directory, 'search.json'), 'wt') as paramsFile:
+            json.dump(optimizer.config.data, paramsFile, indent=4, sort_keys=True)
+
         if len(optimizer.results) > 5:
             correlationsFile = os.path.join(self.directory, 'correlations.csv')
             self.exportCorrelationsToCSV(correlationsFile, optimizer)
@@ -220,6 +224,7 @@ class ResultsAnalyzer:
         xCoords = []
         yCoords = []
         scores = []
+        sizes = []
 
         minVal = float(numpy.min(losses))
         maxVal = float(numpy.max(losses))
@@ -254,12 +259,27 @@ class ResultsAnalyzer:
             xCoords.append(key[0])
             yCoords.append(key[1])
             if (maxVal - minVal) > 0:
-                scores.append(float((numpy.min(resultScores) - minVal) / (maxVal - minVal)))
+                value = float((numpy.min(resultScores) - minVal) / (maxVal - minVal))
+                scores.append(value)
+                sizeAdjust = 1.0 - min(1, ((value*value)) / (redVal*redVal))
+                sizes.append(10 + sizeAdjust * 25)
             else:
-                scores.append(float((numpy.min(resultScores) - minVal)))
+                value = float((numpy.min(resultScores) - minVal))
+                scores.append(value)
+                sizes.append(20.0)
+
+        if parameter1.config.get('scaling', 'linear') == 'logarithmic':
+            plt.xscale('log')
+        else:
+            plt.xscale('linear')
+
+        if parameter2.config.get('scaling', 'linear') == 'logarithmic':
+            plt.yscale('log')
+        else:
+            plt.yscale('linear')
 
         colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
-        plt.scatter(xCoords, yCoords, c=numpy.array(scores), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix_' + str(chartNumber), colorList, N=10240))
+        plt.scatter(xCoords, yCoords, c=numpy.array(scores), s=numpy.array(sizes), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix_' + str(chartNumber), colorList, N=10240), alpha=0.7)
 
         plt.title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
 
@@ -275,16 +295,21 @@ class ResultsAnalyzer:
 
         with open(fileName, 'wt') as file:
             writer = csv.writer(file)
-            param1Padding = int((len(parameter1Buckets) - 1) / 2) - 1
-            param2Padding = int((len(parameter2Buckets) - 1) / 2)
+            param1Padding = int((len(parameter1Buckets) - 1) / 2)
+            param2Padding = int((len(parameter2Buckets) - 1) / 2) - 1
 
-            writer.writerow([''] + ([''] * param2Padding) + [parameter2.root[5:]] + ([''] * (param2Padding)))
-            writer.writerow(['', ''] + parameter2Buckets)
+            writer.writerow(['', ''] + ([''] * param1Padding) + [parameter1.root[5:]] + ([''] * (param1Padding)) + ['', '', ''])
+            writer.writerow(['', '', ''] + parameter1Buckets + ['', '', ''])
+            writer.writerow(['', '', ''] + [''] * (len(parameter1Buckets)) + ['', '', ''])
+            writer.writerow(['', str(parameter2Buckets[0]), ''] + [''] * (len(parameter1Buckets)) + ['', str(parameter2Buckets[0]), ''])
             for rowIndex, row in enumerate(scores):
-                if rowIndex == param1Padding:
-                    writer.writerow([parameter1.root[5:], str(parameter1Buckets[rowIndex])] + row)
+                if rowIndex == param2Padding:
+                    writer.writerow([parameter2.root[5:], str(parameter2Buckets[rowIndex + 1]), '', ''] + list(row) + ['', str(parameter2Buckets[rowIndex + 1]), parameter2.root[5:]])
                 else:
-                    writer.writerow(['', str(parameter1Buckets[rowIndex])] + row)
+                    writer.writerow(['', str(parameter2Buckets[rowIndex + 1]), '', ''] + list(row) + ['', str(parameter2Buckets[rowIndex + 1]), ''])
+            writer.writerow([''] * (len(parameter1Buckets) + 3))
+            writer.writerow(['', '', ''] + parameter1Buckets)
+            writer.writerow(['', ''] + ([''] * param1Padding) + [parameter1.root[5:]] + ([''] * (param1Padding)))
 
     def exportLossMatrixToImage(self, fileName, results, parameter1, parameter2, valueKey='loss', title='Loss Matrix', cutoff=1.0, mode='global', reduction='min'):
         chartNumber = self.chartNumber
@@ -347,15 +372,19 @@ class ResultsAnalyzer:
 
         colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
 
-        im = ax.imshow(numpy.array(colorGrid, dtype=numpy.float32), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix' + str(chartNumber), colorList, N=10240), interpolation='bicubic')
+        im = ax.imshow(colorGrid, cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix' + str(chartNumber), colorList, N=10240), interpolation='quadric')
 
         # We want to show all ticks...
-        ax.set_xticks(numpy.arange(len(parameter2Buckets)))
-        ax.set_yticks(numpy.arange(len(parameter1Buckets)))
+        ax.set_xticks(numpy.arange(len(parameter1Buckets))-0.5)
+        ax.set_yticks(numpy.arange(len(parameter2Buckets))-0.5)
+        #
+        # if parameter1.root[5:] == 'layer_0.max_depth':
+        #     print(parameter1Buckets)
+        #     print(parameter2Buckets)
 
         # ... and label them with the respective list entries
-        ax.set_xticklabels(parameter2Buckets)
-        ax.set_yticklabels(parameter1Buckets)
+        ax.set_xticklabels([roundPrecision(bucket) for bucket in parameter1Buckets])
+        ax.set_yticklabels([roundPrecision(bucket) for bucket in parameter2Buckets])
 
         ax.set_xlabel(parameter1.root[5:])
         ax.set_ylabel(parameter2.root[5:])
@@ -372,14 +401,14 @@ class ResultsAnalyzer:
 
         # Determine the longest string we have to put into the heatmap
         longest = 0
-        for i in range(len(parameter1Buckets)):
-            for j in range(len(parameter2Buckets)):
+        for j in range(len(parameter1Buckets[1:])):
+            for i in range(len(parameter2Buckets[1:])):
                 longest = max(len(getText(i, j)), longest)
 
         # Loop over data dimensions and create text annotations.
         fontSize = int(12 - max(0, 1.25 * (longest - 3)))
-        for i in range(len(parameter1Buckets)):
-            for j in range(len(parameter2Buckets)):
+        for j in range(len(parameter1Buckets[1:])):
+            for i in range(len(parameter2Buckets[1:])):
                 ax.text(j, i, getText(i, j), ha="center", va="center", color="black", fontsize=fontSize)
 
         ax.set_title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
@@ -476,7 +505,7 @@ class ResultsAnalyzer:
             for bucketIndex, bucket in enumerate(buckets):
                 bucketLosses = []
                 for valueIndex, value in enumerate(filteredValues):
-                    if (bucketIndex == 0 and value < bucket) or (value >= buckets[bucketIndex - 1] and value < bucket):
+                    if (bucketIndex == 0 and value <= bucket) or (value > buckets[bucketIndex - 1] and value <= bucket):
                         bucketLosses.append(filteredLosses[valueIndex])
                 if len(bucketLosses) > 0:
                     newLosses.append(numpy.mean(bucketLosses))
@@ -616,19 +645,50 @@ class ResultsAnalyzer:
         if (top - bottom) < 1e-5:
             top += 1e-5
 
+        # Determine the number of possible discrete values for this parameter (in the entire hyperparameter space).
+        # If there are less possible discrete values then number of buckets, just return each of them as our buckets.
+        if parameter.config.get('rounding', None) is not None:
+            paramMin = parameter.config['min']
+            paramMax = parameter.config['max']
+            possibleValues = math.ceil((paramMax - paramMin) / parameter.config['rounding']) + 1
+            if possibleValues <= numBuckets:
+                discrete = list(numpy.arange(paramMin, paramMax, parameter.config['rounding'])) + [paramMax]
+
+                # Add in one additional bucket on the low end.
+                buckets = sorted(list(discrete))
+                diff = buckets[1] - buckets[0]
+                bottom = bottom - diff
+                buckets.insert(0, bottom)
+                return buckets
+
+        # Count the number of discrete values for this parameter in our results.
+        # If there are less discrete values then the number of buckets,
+        # then modify the bottom so we consider the lowest discrete value
+        # as its own bucket
+        discrete = set(values)
+        if len(discrete) <= numBuckets:
+            # Add in one additional bucket on the low end.
+            buckets = sorted(list(discrete))
+            diff = buckets[1] - buckets[0]
+            bottom = bottom - diff
+
         buckets = []
         if parameter.config['scaling'] == 'linear':
             domain = top - bottom
-            buckets = list(numpy.arange(bottom, top + (domain / numBuckets), domain / numBuckets))[1:]
+            buckets = [bottom]
+            while len(buckets) <= (numBuckets):
+                buckets = buckets + [buckets[-1] + (domain / numBuckets)]
         elif parameter.config['scaling'] == 'logarithmic':
             logMax = math.log(top)
             logMin = math.log(bottom)
             domain = logMax - logMin
-            logBuckets = numpy.arange(logMin, logMax + (domain / numBuckets), domain / numBuckets)[1:]
+
+            logBuckets = [logMin]
+            while len(logBuckets) <= numBuckets:
+                logBuckets = logBuckets + [logBuckets[-1] + (domain / numBuckets)]
             buckets = [math.exp(n) for n in logBuckets]
 
-        # Round the precision of the buckets down. Helps with the formatting of the charts
-        buckets = [roundPrecision(value) for value in buckets]
+        buckets = [value for value in buckets]
 
         return buckets
 
@@ -649,9 +709,9 @@ class ResultsAnalyzer:
 
         # Create a grid for each of the values
         resultGrid = []
-        for value in parameter1Buckets:
+        for value in parameter1Buckets[1:]:
             row = []
-            for value in parameter2Buckets:
+            for value in parameter2Buckets[1:]:
                 row.append([])
             resultGrid.append(row)
 
@@ -668,12 +728,12 @@ class ResultsAnalyzer:
                     parameter2Value = float(result[parameter2Key])
 
                     parameter1Index = None
-                    for index1, value1 in enumerate(parameter1Buckets):
+                    for index1, value1 in enumerate(parameter1Buckets[1:]):
                         if parameter1Value <= value1:
                             parameter1Index = index1
                             break
                     parameter2Index = None
-                    for index2, value2 in enumerate(parameter2Buckets):
+                    for index2, value2 in enumerate(parameter2Buckets[1:]):
                         if parameter2Value <= value2:
                             parameter2Index = index2
                             break
@@ -695,9 +755,9 @@ class ResultsAnalyzer:
             scoreGrid.append(scoreRow)
 
         newScoreGrid = []
-        for value in parameter1Buckets:
+        for value in parameter1Buckets[1:]:
             row = []
-            for value in parameter2Buckets:
+            for value in parameter2Buckets[1:]:
                 row.append(0)
             newScoreGrid.append(row)
 
@@ -729,5 +789,11 @@ class ResultsAnalyzer:
         for rowIndex, row in enumerate(newScoreGrid):
             for columnIndex, column in enumerate(row):
                 newScoreGrid[rowIndex][columnIndex] = roundPrecision(newScoreGrid[rowIndex][columnIndex])
+
+        # Transpose the score grid, so that parameter1 is on the horizontal
+        newScoreGrid = numpy.transpose(numpy.array(newScoreGrid))
+        newScoreGrid = numpy.flip(newScoreGrid, axis=0)
+
+        parameter2Buckets.reverse()
 
         return newScoreGrid, parameter1Buckets, parameter2Buckets
