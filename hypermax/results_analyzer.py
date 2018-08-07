@@ -279,7 +279,7 @@ class ResultsAnalyzer:
             plt.yscale('linear')
 
         colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
-        plt.scatter(xCoords, yCoords, c=numpy.array(scores), s=numpy.array(sizes), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix_' + str(chartNumber), colorList, N=10240), alpha=0.7)
+        plt.scatter(xCoords, yCoords, c=numpy.array(scores), s=numpy.array(sizes), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix_' + str(chartNumber), colorList, N=50000), alpha=0.7)
 
         plt.title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
 
@@ -372,7 +372,7 @@ class ResultsAnalyzer:
 
         colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
 
-        im = ax.imshow(colorGrid, cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix' + str(chartNumber), colorList, N=10240), interpolation='quadric')
+        im = ax.imshow(colorGrid, cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix' + str(chartNumber), colorList, N=50000), interpolation='quadric')
 
         # We want to show all ticks...
         ax.set_xticks(numpy.arange(len(parameter1Buckets))-0.5)
