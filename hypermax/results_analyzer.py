@@ -19,6 +19,7 @@ import warnings
 import scipy.optimize
 import random
 import json
+import atexit
 
 
 def handleChartException(function):
@@ -204,6 +205,11 @@ class ResultsAnalyzer:
                                     futures.append(executor.submit(self.generateMultiParameterExports, list(optimizer.results), parameter1, parameter2))
                 for future in futures:
                     future.add_done_callback(onChartCompleted)
+                    def shutdown():
+                        future.cancel()
+                    atexit.register(shutdown)
+                    future.add_done_callback(lambda a: atexit.unregister(shutdown))
+
             for future in futures:
                 if future.result() is not None:
                     print(traceback.format_exception_only(Exception, future.result()))
