@@ -12,6 +12,7 @@ import random
 import concurrent.futures
 import functools
 import atexit
+import jsonschema
 from hypermax.execution import Execution
 from hypermax.results_analyzer import ResultsAnalyzer
 
@@ -31,6 +32,9 @@ class Optimizer:
     def __init__(self, configuration):
         self.config = Configuration(configuration)
 
+        self.searchConfig = configuration.get('search', {})
+        jsonschema.validate(self.searchConfig, self.configurationSchema())
+
         self.space = self.config.createHyperparameterSpace()
 
         self.threadExecutor = concurrent.futures.ThreadPoolExecutor()
@@ -45,7 +49,7 @@ class Optimizer:
 
         self.thread = threading.Thread(target=lambda: self.optimizationThread(), daemon=True)
 
-        self.totalTrials = 1000
+        self.totalTrials = self.searchConfig.get("iterations")
         self.trialsSinceDetailedResults = 0
         self.resultsExportFuture = None
 
@@ -54,6 +58,20 @@ class Optimizer:
 
     def __del__(self):
         self.threadExecutor.shutdown(wait=True)
+
+
+    @classmethod
+    def configurationSchema(self):
+        """ This method returns the configuration schema for the optimization module. The schema
+            is a standard JSON-schema object."""
+        return {
+            "type": "object",
+            "properties": {
+                "method": {"type": "string", "enum": ['tpe']},
+                "iterations": {"type": "number"},
+            },
+            "required": ['method', 'iterations']
+        }
 
     def completed(self):
         return len(self.results)

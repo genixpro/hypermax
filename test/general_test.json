@@ -1,0 +1,81 @@
+{
+  "hyperparameters": {
+    "type": "object",
+    "properties": {
+      "first_value": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "logarithmic",
+        "min": 1,
+        "max": 1000,
+        "rounding": 1
+      },
+      "second_value": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "logarithmic",
+        "min": 1,
+        "max": 1000,
+        "rounding": 1
+      },
+      "third_value": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "logarithmic",
+        "min": 1,
+        "max": 1000,
+        "rounding": 1
+      },
+      "fourth_value": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "logarithmic",
+        "min": 1,
+        "max": 1000,
+        "rounding": 1
+      },
+      "fifth_value": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "logarithmic",
+        "min": 1,
+        "max": 1000,
+        "rounding": 1
+      },
+      "sixth_value": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "logarithmic",
+        "min": 1,
+        "max": 1000,
+        "rounding": 1
+      },
+      "seventh_value": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "logarithmic",
+        "min": 1,
+        "max": 1000,
+        "rounding": 1
+      },
+      "eighth_value": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "logarithmic",
+        "min": 1,
+        "max": 1000,
+        "rounding": 1
+      }
+    }
+  },
+  "function": {
+    "type": "python_function",
+    "module": "hypermax.test_model",
+    "name": "trainModel",
+    "parallel": 5
+  },
+  "search": {
+      "method": "tpe",
+      "iterations": 1000
+  }
+}

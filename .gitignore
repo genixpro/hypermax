@@ -9,7 +9,6 @@ __pycache__/
 
 # Distribution / packaging
 data/
-test/
 email_data/
 model/
 tmp/
@@ -113,3 +112,4 @@ venv.bak/
 .idea
 venv
 *.csv
+results_*
