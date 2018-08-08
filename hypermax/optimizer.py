@@ -1,6 +1,7 @@
 import hyperopt
 import csv
 import json
+import os.path
 from pprint import pprint
 import datetime
 import time
@@ -8,7 +9,9 @@ import numpy.random
 import threading
 import queue
 import copy
+import tempfile
 import random
+import subprocess
 import concurrent.futures
 import functools
 import atexit
@@ -50,14 +53,15 @@ class Optimizer:
         self.thread = threading.Thread(target=lambda: self.optimizationThread(), daemon=True)
 
         self.totalTrials = self.searchConfig.get("iterations")
-        self.trialsSinceDetailedResults = 0
+        self.trialsSinceResultsUpload = 0
         self.resultsExportFuture = None
 
         self.currentTrials = []
 
 
     def __del__(self):
-        self.threadExecutor.shutdown(wait=True)
+        if self.threadExecutor:
+            self.threadExecutor.shutdown(wait=True)
 
 
     @classmethod
@@ -178,13 +182,16 @@ class Optimizer:
 
         self.computeCurrentBest()
 
-        self.trialsSinceDetailedResults += len(results)
+        self.trialsSinceResultsUpload += len(results)
 
-        if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results)>5):
-            self.resultsExportFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
-        else:
-            self.resultsAnalyzer.outputResultsFolder(self, False)
+        # if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results)>5):
+        #     self.resultsExportFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
+        # else:
+        # self.resultsAnalyzer.outputResultsFolder(self, False)
 
+        if self.trialsSinceResultsUpload >= 50:
+            self.saveResultsToHypermaxResultsRepository()
+            self.trialsSinceResultsUpload = 0
 
     def runOptimization(self):
         self.thread.start()
@@ -285,3 +292,20 @@ class Optimizer:
                 newResults.append(newResult)
             self.results = newResults
         self.computeCurrentBest()
+
+    def saveResultsToHypermaxResultsRepository(self):
+        try:
+            hypermaxResultsConfig = self.config.data['hypermax_results']
+            with tempfile.TemporaryDirectory() as directory:
+                process = subprocess.run(['git', 'clone', 'git@github.com:electricbrainio/hypermax-results.git'], cwd=directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                # print(process.stdout)
+                hypermaxResultsDirectory = os.path.join(directory, 'hypermax-results', hypermaxResultsConfig['name'])
+                self.resultsAnalyzer.outputResultsFolder(self, detailed=False, directory=hypermaxResultsDirectory)
+                with open(os.path.join(hypermaxResultsDirectory, "metadata.json"), 'wt') as file:
+                    json.dump(self.config.data['hypermax_results'], file, indent=4)
+                process = subprocess.run(['git', 'add', hypermaxResultsDirectory], cwd=os.path.join(directory, 'hypermax-results'))
+                process = subprocess.run(['git', 'commit', '-m', 'Hypermax automatically storing results for model ' + hypermaxResultsConfig['name'] + ' with ' + str(len(self.results)) + " trials."], cwd=os.path.join(directory, 'hypermax-results'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                process = subprocess.run(['git push'], cwd=os.path.join(directory, 'hypermax-results'), stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+                print(process.stdout)
+        except Exception as e:
+            print(e)
