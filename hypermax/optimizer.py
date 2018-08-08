@@ -71,7 +71,7 @@ class Optimizer:
         return {
             "type": "object",
             "properties": {
-                "method": {"type": "string", "enum": ['tpe']},
+                "method": {"type": "string", "enum": ['tpe', 'random']},
                 "iterations": {"type": "number"},
             },
             "required": ['method', 'iterations']
@@ -89,12 +89,20 @@ class Optimizer:
             params = parameters
             return {"loss": 0, 'status': 'ok'}
 
-        hyperopt.fmin(fn=sample,
-                      space=self.space,
-                      algo=functools.partial(hyperopt.tpe.suggest, n_EI_candidates=24, gamma=0.25),
-                      max_evals=1,
-                      trials=self.convertResultsToTrials(self.results),
-                      rstate=rstate)
+        if self.searchConfig['method'] == 'tpe':
+            hyperopt.fmin(fn=sample,
+                          space=self.space,
+                          algo=functools.partial(hyperopt.tpe.suggest, n_EI_candidates=24, gamma=0.25),
+                          max_evals=1,
+                          trials=self.convertResultsToTrials(self.results),
+                          rstate=rstate)
+        elif self.searchConfig['method'] == 'random':
+            hyperopt.fmin(fn=sample,
+                          space=self.space,
+                          algo=hyperopt.rand.suggest,
+                          max_evals=1,
+                          trials=self.convertResultsToTrials(self.results),
+                          rstate=rstate)
 
         return params
 
