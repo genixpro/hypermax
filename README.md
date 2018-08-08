@@ -1,6 +1,6 @@
 # Introduction
 
-Hypermax is a power tool for optimizing algorithms. It builds on the powerful TPE algorithm by James Bergstra with additional features
+Hypermax is a power tool for optimizing algorithms. It builds on the powerful TPE algorithm with additional features
 meant to help you get to your optimal hyper parameters faster and easier. Hypermax automatically gives you a variety of charts and graphs
 based on your hyperparameter results. Hypermax can be restarted easily in-case of a crash. Hypermax can monitor the CPU and RAM usage
 of your algorithms - automatically killing your process if it takes too long to execute or uses too much RAM. Hypermax even has a UI.
@@ -64,7 +64,7 @@ Next, define how you want to execute your optimization function:
     {
         "function": {
             "type": "python_function",
-            "src": "model.py",
+            "module": "model.py",
             "name": "trainModel"
         }
     }
