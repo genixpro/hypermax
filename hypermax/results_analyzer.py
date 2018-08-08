@@ -34,7 +34,7 @@ def handleChartException(function):
         try:
             return function(*args, **kwargs)
         except Exception as e:
-            pass
+            plt.close()
             # raise # reraise the exception and allow it to bubble so developers can catch why the charts aren't being generated.
 
     return wrapper
@@ -82,6 +82,9 @@ class ResultsAnalyzer:
             while dir:
                 dir, tail = os.path.split(dir)
                 parts.insert(0, tail)
+                if dir == '/':
+                    parts.insert(0, '/')
+                    break
             for index in range(len(parts)):
                 if index > 0:
                     partialDirectory = os.path.join(*parts[:index + 1])
@@ -91,9 +94,12 @@ class ResultsAnalyzer:
                 if not os.path.exists(partialDirectory):
                     os.mkdir(partialDirectory)
 
-    def generateMultiParameterExports(self, results, parameter1, parameter2):
+    def generateMultiParameterExports(self, results, parameter1, parameter2, directory=None):
         try:
-            subDirectory = os.path.join(self.directory, parameter1.root[5:], parameter2.root[5:])
+            if directory is None:
+                directory = self.directory
+
+            subDirectory = os.path.join(directory, parameter1.root[5:], parameter2.root[5:])
             self.makeDirs(subDirectory)
 
             for reduction in ['mean', 'min']:
@@ -129,9 +135,12 @@ class ResultsAnalyzer:
             traceback.print_exc()
             return e
 
-    def generateSingleParameterExports(self, results, parameter):
+    def generateSingleParameterExports(self, results, parameter, directory=None):
         try:
-            subDirectory = os.path.join(self.directory, parameter.root[5:])
+            if directory is None:
+                directory = self.directory
+
+            subDirectory = os.path.join(directory, parameter.root[5:])
             self.makeDirs(subDirectory)
 
             lossCsvFilename = 'losses_' + parameter.root[5:] + '.csv'
@@ -161,24 +170,27 @@ class ResultsAnalyzer:
             traceback.print_exc()
             return e
 
-    def outputResultsFolder(self, optimizer, detailed=True, workers=1):
+    def outputResultsFolder(self, optimizer, detailed=True, workers=1, directory=None):
         parameters = Hyperparameter(optimizer.config.data['hyperparameters']).getFlatParameters()
 
-        # Ensure the directory we want to store results in is there
-        self.makeDirs(self.directory)
+        if directory is None:
+            directory = self.directory
 
-        resultsFile = os.path.join(self.directory, 'results.csv')
+        # Ensure the directory we want to store results in is there
+        self.makeDirs(directory)
+
+        resultsFile = os.path.join(directory, 'results.csv')
         optimizer.exportResultsCSV(resultsFile)
 
-        with open(os.path.join(self.directory, 'search.json'), 'wt') as paramsFile:
+        with open(os.path.join(directory, 'search.json'), 'wt') as paramsFile:
             json.dump(optimizer.config.data, paramsFile, indent=4, sort_keys=True)
 
         if optimizer.best:
-            with open(os.path.join(self.directory, 'best.json'), 'wt') as paramsFile:
+            with open(os.path.join(directory, 'best.json'), 'wt') as paramsFile:
                 json.dump(optimizer.best, paramsFile, indent=4, sort_keys=True)
 
         if len(optimizer.results) > 5:
-            correlationsFile = os.path.join(self.directory, 'correlations.csv')
+            correlationsFile = os.path.join(directory, 'correlations.csv')
             self.exportCorrelationsToCSV(correlationsFile, optimizer)
 
         def onChartCompleted(e):
@@ -196,13 +208,13 @@ class ResultsAnalyzer:
             with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
                 for parameter1 in parameters:
                     # self.generateSingleParameterExports(list(optimizer.results), parameter1)
-                    futures.append(executor.submit(self.generateSingleParameterExports, list(optimizer.results), parameter1))
+                    futures.append(executor.submit(self.generateSingleParameterExports, list(optimizer.results), parameter1, directory))
                     if parameter1.config['type'] == 'number':
                         for parameter2 in parameters:
                             if parameter2.config['type'] == 'number':
                                 if parameter1.root != parameter2.root:
                                     # self.generateMultiParameterExports(list(optimizer.results), parameter1, parameter2)
-                                    futures.append(executor.submit(self.generateMultiParameterExports, list(optimizer.results), parameter1, parameter2))
+                                    futures.append(executor.submit(self.generateMultiParameterExports, list(optimizer.results), parameter1, parameter2, directory))
                 for future in futures:
                     future.add_done_callback(onChartCompleted)
                     def shutdown():

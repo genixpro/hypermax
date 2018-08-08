@@ -77,5 +77,8 @@
   "search": {
       "method": "tpe",
       "iterations": 1000
+  },
+  "hypermax_results": {
+      "name": "hypermax_unit_test"
   }
 }
