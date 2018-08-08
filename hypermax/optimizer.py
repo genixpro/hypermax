@@ -193,7 +193,7 @@ class Optimizer:
         if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results)>5):
             self.resultsExportFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
         else:
-        self.resultsAnalyzer.outputResultsFolder(self, False)
+            self.resultsAnalyzer.outputResultsFolder(self, False)
 
         if 'hypermax_results' in self.config.data:
             if self.trialsSinceResultsUpload is None or self.trialsSinceResultsUpload >= self.config.data['hypermax_results']['upload_frequency']:
