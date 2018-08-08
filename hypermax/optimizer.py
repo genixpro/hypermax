@@ -53,7 +53,7 @@ class Optimizer:
         self.thread = threading.Thread(target=lambda: self.optimizationThread(), daemon=True)
 
         self.totalTrials = self.searchConfig.get("iterations")
-        self.trialsSinceResultsUpload = 0
+        self.trialsSinceResultsUpload = None
         self.resultsExportFuture = None
 
         self.currentTrials = []
@@ -182,16 +182,17 @@ class Optimizer:
 
         self.computeCurrentBest()
 
-        self.trialsSinceResultsUpload += len(results)
+        if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results)>5):
+            self.resultsExportFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
+        else:
+        self.resultsAnalyzer.outputResultsFolder(self, False)
 
-        # if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results)>5):
-        #     self.resultsExportFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
-        # else:
-        # self.resultsAnalyzer.outputResultsFolder(self, False)
-
-        if self.trialsSinceResultsUpload >= 50:
-            self.saveResultsToHypermaxResultsRepository()
-            self.trialsSinceResultsUpload = 0
+        if 'hypermax_results' in self.config.data:
+            if self.trialsSinceResultsUpload is None or self.trialsSinceResultsUpload >= self.config.data['hypermax_results']['upload_frequency']:
+                self.saveResultsToHypermaxResultsRepository()
+                self.trialsSinceResultsUpload = 0
+            else:
+                self.trialsSinceResultsUpload += len(results)
 
     def runOptimization(self):
         self.thread.start()
