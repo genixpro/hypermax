@@ -298,7 +298,6 @@ class Optimizer:
             hypermaxResultsConfig = self.config.data['hypermax_results']
             with tempfile.TemporaryDirectory() as directory:
                 process = subprocess.run(['git', 'clone', 'git@github.com:electricbrainio/hypermax-results.git'], cwd=directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                # print(process.stdout)
                 hypermaxResultsDirectory = os.path.join(directory, 'hypermax-results', hypermaxResultsConfig['name'])
                 self.resultsAnalyzer.outputResultsFolder(self, detailed=False, directory=hypermaxResultsDirectory)
                 with open(os.path.join(hypermaxResultsDirectory, "metadata.json"), 'wt') as file:
@@ -306,6 +305,5 @@ class Optimizer:
                 process = subprocess.run(['git', 'add', hypermaxResultsDirectory], cwd=os.path.join(directory, 'hypermax-results'))
                 process = subprocess.run(['git', 'commit', '-m', 'Hypermax automatically storing results for model ' + hypermaxResultsConfig['name'] + ' with ' + str(len(self.results)) + " trials."], cwd=os.path.join(directory, 'hypermax-results'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 process = subprocess.run(['git push'], cwd=os.path.join(directory, 'hypermax-results'), stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-                print(process.stdout)
         except Exception as e:
             print(e)
