@@ -12,7 +12,7 @@
       "weight_decay": {
         "type": "number",
         "mode": "uniform",
-        "scaling": "linear",
+        "scaling": "logarithmic",
         "min": 2e-5,
         "max": 2e-3
       },
