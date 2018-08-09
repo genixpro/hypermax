@@ -19,6 +19,70 @@
       "activation": {
         "type": "string",
         "enum": ["relu", "elu", "selu", "rrelu"]
+      },
+      "layer1_size": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "linear",
+        "min": 32,
+        "max": 160,
+        "rounding": 32
+      },
+      "layer1_layers": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "linear",
+        "min": 2,
+        "max": 4,
+        "rounding": 1
+      },
+      "layer2_size": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "linear",
+        "min": 64,
+        "max": 256,
+        "rounding": 32
+      },
+      "layer2_layers": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "linear",
+        "min": 2,
+        "max": 6,
+        "rounding": 1
+      },
+      "layer3_size": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "linear",
+        "min": 128,
+        "max": 512,
+        "rounding": 64
+      },
+      "layer3_layers": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "linear",
+        "min": 2,
+        "max": 8,
+        "rounding": 1
+      },
+      "layer4_size": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "linear",
+        "min": 256,
+        "max": 1024,
+        "rounding": 64
+      },
+      "layer4_layers": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "linear",
+        "min": 2,
+        "max": 4,
+        "rounding": 1
       }
     }
   },

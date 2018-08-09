@@ -25,7 +25,7 @@ class Hyperparameter:
 
             return choices
         elif 'enum' in self.config:
-            choices = hp.choice(name, [self.config['enum']])
+            choices = hp.choice(name, self.config['enum'])
             return choices
         elif self.config['type'] == 'object':
             space = {}

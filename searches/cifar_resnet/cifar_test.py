@@ -41,8 +41,8 @@ def test(params):
         total = 0
         for accuracy in accuracies:
             total += accuracy
-        averageAccuracy = total - len(accuracies)
+        averageAccuracy = total / len(accuracies)
 
     subprocess.run(['rm', 'tta_accuracy.txt'])
 
-    return {"loss": averageAccuracy}
+    return {"loss": 1.0 - averageAccuracy}
