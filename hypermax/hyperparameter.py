@@ -24,6 +24,9 @@ class Hyperparameter:
             choices = hp.choice(name, [Hyperparameter(param, name + "." + str(index)).createHyperoptSpace() for index,param in enumerate(data)])
 
             return choices
+        elif 'enum' in self.config:
+            choices = hp.choice(name, [self.config['enum']])
+            return choices
         elif self.config['type'] == 'object':
             space = {}
             for key in self.config['properties'].keys():

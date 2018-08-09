@@ -1,0 +1,53 @@
+{
+  "hyperparameters": {
+    "type": "object",
+    "properties": {
+      "learning_rate": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "linear",
+        "min": 0.1,
+        "max": 3.0
+      },
+      "weight_decay": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "linear",
+        "min": 2e-5,
+        "max": 2e-3
+      },
+      "activation": {
+        "type": "string",
+        "enum": ["relu", "elu", "selu", "rrelu"]
+      }
+    }
+  },
+  "function": {
+    "type": "python_function",
+    "module": "test",
+    "name": "test",
+    "parallel": 1
+  },
+  "search": {
+      "method": "random",
+      "iterations": 10000
+  },
+  "hypermax_results": {
+    "name": "cifar10_resnet",
+    "upload_frequency": 10,
+    "author": "Bradley Arsenault",
+    "contact": "brad@electricbrain.io",
+    "date": "August 8, 2018",
+    "description": "These are the results from doing a random search using on the cifar10 dataset. We used the fast-ai code available here: https://github.com/fastai/imagenet-fast/tree/master/cifar10 but modified it to introduce hyperparameters that could be optimized. It was chosen because it converges very quickly.",
+    "algorithm": "convnet",
+    "input_types": [
+        "image"
+    ],
+    "output_types": [
+        "classification"
+    ],
+    "metrics": [
+        "accuracy"
+    ]
+  }
+}
