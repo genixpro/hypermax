@@ -84,6 +84,8 @@ class Hyperparameter:
                     keys.add(key)
 
             return keys
+        elif 'enum' in self.config:
+            return [name]
         elif self.config['type'] == 'object':
             keys = set()
             for key in self.config['properties'].keys():
@@ -109,6 +111,8 @@ class Hyperparameter:
                 subParameters = Hyperparameter(param, name + "." + str(index)).getFlatParameters()
                 parameters = parameters + subParameters
             return parameters
+        elif 'enum' in self.config:
+            return [self]
         elif self.config['type'] == 'object':
             parameters = []
             for key in self.config['properties'].keys():
