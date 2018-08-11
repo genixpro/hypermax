@@ -50,7 +50,7 @@ class Optimizer:
         self.best = None
         self.bestLoss = None
 
-        self.thread = threading.Thread(target=lambda: self.optimizationThread(), daemon=True)
+        self.thread = threading.Thread(target=lambda: self.optimizationThread(), daemon=True if configuration.get("ui", {}).get("enabled", True) else False)
 
         self.totalTrials = self.searchConfig.get("iterations")
         self.trialsSinceResultsUpload = None
@@ -110,17 +110,17 @@ class Optimizer:
         best = None
         bestLoss = None
         for result in self.results:
-            if best is None or (result['loss'] is not None and result['loss'] < bestLoss):
+            if (best is None and result['loss'] is not None ) or (result['loss'] is not None and result['loss'] < bestLoss):
                 best = result
                 bestLoss = result['loss']
         self.best = best
         self.bestLoss = bestLoss
 
     def runOptimizationRound(self):
-        jobs = self.config.data['function'].get('parallel', 4)
+        jobs = self.config.data['function'].get('parallel', 1)
         samples = [self.sampleNext() for job in range(jobs)]
 
-        def testSample(params, trial):
+        def testSample(params, trial, job):
             currentTrial = {
                 "start": datetime.datetime.now(),
                 "trial": trial,
@@ -128,7 +128,7 @@ class Optimizer:
             }
             self.currentTrials.append(currentTrial)
             start = datetime.datetime.now()
-            execution = Execution(self.config.data['function'], parameters=params)
+            execution = Execution(self.config.data['function'], parameters=params, worker_n=job)
             modelResult = execution.run()
             end = datetime.datetime.now()
 
@@ -180,7 +180,7 @@ class Optimizer:
 
         futures = []
         for index, sample in enumerate(samples):
-            futures.append(self.threadExecutor.submit(testSample, sample, len(self.results) + index))
+            futures.append(self.threadExecutor.submit(testSample, sample, len(self.results) + index, index))
 
         concurrent.futures.wait(futures)
 
@@ -190,10 +190,10 @@ class Optimizer:
 
         self.computeCurrentBest()
 
-        if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results)>5):
-            self.resultsExportFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, True))
-        else:
-            self.resultsAnalyzer.outputResultsFolder(self, False)
+        # if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results)>5):
+        #     self.resultsExportFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, self.config.data.get("results", {}).get("graphs", True)))
+        # else:
+        self.resultsAnalyzer.outputResultsFolder(self, False)
 
         if 'hypermax_results' in self.config.data:
             if self.trialsSinceResultsUpload is None or self.trialsSinceResultsUpload >= self.config.data['hypermax_results']['upload_frequency']:

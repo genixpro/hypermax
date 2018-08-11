@@ -20,6 +20,7 @@ import scipy.optimize
 import random
 import json
 import atexit
+import matplotlib.ticker as mticker
 
 
 def handleChartException(function):
@@ -35,7 +36,7 @@ def handleChartException(function):
             return function(*args, **kwargs)
         except Exception as e:
             plt.close()
-            # raise # reraise the exception and allow it to bubble so developers can catch why the charts aren't being generated.
+            raise # reraise the exception and allow it to bubble so developers can catch why the charts aren't being generated.
 
     return wrapper
 
@@ -46,7 +47,7 @@ class ResultsAnalyzer:
     """
 
     def __init__(self, config):
-        resultsConfig = config.get('results', {"results_directory": "results"})
+        resultsConfig = config.get('results', {"directory": "results"})
 
         jsonschema.validate(resultsConfig, self.configurationSchema())
 
@@ -56,13 +57,21 @@ class ResultsAnalyzer:
 
         # Determine if the results directory exists already. If so, we add a suffix
         increment = 0
-        while os.path.exists(resultsConfig['results_directory'] + "_" + str(increment)):
+        while os.path.exists(resultsConfig['directory'] + "_" + str(increment)):
             increment += 1
-        self.directory = resultsConfig['results_directory'] + "_" + str(increment)
+        self.directory = resultsConfig['directory'] + "_" + str(increment)
 
         self.fig = None
         self.completedCharts = 0
         self.totalCharts = 0
+
+        self.singleParameterLossFigure = None
+        self.twoParameterScatterFigure = None
+        self.twoParameterLossFigure = None
+
+        self.singleParameterLossAxes = None
+        self.twoParameterScatterAxes = None
+        self.twoParameterLossAxes = None
 
     @classmethod
     def configurationSchema(self):
@@ -71,7 +80,8 @@ class ResultsAnalyzer:
         return {
             "type": "object",
             "properties": {
-                "results_directory": {"type": "string"}
+                "graphs": {"type": "boolean"},
+                "directory": {"type": "string"}
             }
         }
 
@@ -102,7 +112,7 @@ class ResultsAnalyzer:
             subDirectory = os.path.join(directory, parameter1.root[5:], parameter2.root[5:])
             self.makeDirs(subDirectory)
 
-            for reduction in ['mean', 'min']:
+            for reduction in ['mean', 'min', 'median']:
                 lossCsvFilename = 'loss_matrix_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
                 lossImageFilename = 'loss_matrix_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.png'
                 lossCsvTop10PercentFilename = 'loss_matrix_top_10_percent_' + reduction + "_" + parameter1.root[5:] + '_' + parameter2.root[5:] + '.csv'
@@ -144,18 +154,21 @@ class ResultsAnalyzer:
             self.makeDirs(subDirectory)
 
             lossCsvFilename = 'losses_' + parameter.root[5:] + '.csv'
-            lossBucketedCsvFilename = 'losses_bucketed_' + parameter.root[5:] + '.csv'
             lossImageFilename = 'loss_chart_' + parameter.root[5:] + '.png'
-            lossBucketedImageFilename = 'loss_chart_bucketed_' + parameter.root[5:] + '.png'
             lossTop10ImageFilename = 'loss_chart_top_10_percent_' + parameter.root[5:] + '.png'
-            lossTop10BucketedImageFilename = 'loss_chart_top_10_percent_bucketed_' + parameter.root[5:] + '.png'
             self.exportSingleParameterLossCSV(os.path.join(subDirectory, lossCsvFilename), results, parameter, 'loss')
-            self.exportSingleParameterLossCSV(os.path.join(subDirectory, lossBucketedCsvFilename), results, parameter, 'loss', numBuckets=20)
             self.exportSingleParameterLossChart(os.path.join(subDirectory, lossImageFilename), results, parameter, 'loss', 'Loss Chart')
-            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossBucketedImageFilename), results, parameter, 'loss', 'Loss Chart (20 Buckets)', numBuckets=20)
             self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10ImageFilename), results, parameter, 'loss', 'Loss Chart (top 10%)', cutoff=0.1)
-            self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10BucketedImageFilename), results, parameter, 'loss', 'Loss Chart (20 buckets, top 10%)',
-                                                cutoff=0.1, numBuckets=20)
+
+            for reduction in ['mean', 'min', 'median']:
+                lossBucketedCsvFilename = 'losses_' + reduction + '_bucketed_' + parameter.root[5:] + '.csv'
+                lossBucketedImageFilename = 'loss_chart_'+reduction+'_bucketed_' + parameter.root[5:] + '.png'
+                lossTop10BucketedImageFilename = 'loss_chart_top_10_percent_'+reduction+'_bucketed_' + parameter.root[5:] + '.png'
+
+                self.exportSingleParameterLossCSV(os.path.join(subDirectory, lossBucketedCsvFilename), results, parameter, 'loss', numBuckets=20, reduction=reduction)
+                self.exportSingleParameterLossChart(os.path.join(subDirectory, lossBucketedImageFilename), results, parameter, 'loss', 'Loss Chart (20 Buckets, ' + reduction + ')', numBuckets=20, reduction=reduction)
+                self.exportSingleParameterLossChart(os.path.join(subDirectory, lossTop10BucketedImageFilename), results, parameter, 'loss', 'Loss Chart (20 buckets, ' + reduction + ', top 10%)', cutoff=0.1, numBuckets=20, reduction=reduction)
+
 
             timeCsvFilename = 'times_' + parameter.root[5:] + '.csv'
             timeBucketedCsvFilename = 'times_bucketed_' + parameter.root[5:] + '.csv'
@@ -298,7 +311,14 @@ class ResultsAnalyzer:
         red = numpy.array([1, 0, 0, 1])
         blue = numpy.array([0.3, 0.3, 1, 1])
 
-        fig, ax = plt.subplots()
+        if self.twoParameterScatterFigure is None:
+            fig, ax = plt.subplots()
+            self.twoParameterScatterFigure = fig
+            self.twoParameterScatterAxes = ax
+        else:
+            fig = self.twoParameterScatterFigure
+            ax = self.twoParameterScatterAxes
+            ax.clear()
 
         # We shuffle the results here because the scatter plot will by default draw later points over earlier ones, and later results will be on average better
         # anyhow, skewing the graphic
@@ -318,26 +338,43 @@ class ResultsAnalyzer:
                 sizes.append(20.0)
 
         if parameter1.config.get('scaling', 'linear') == 'logarithmic':
-            plt.xscale('log')
+            ax.set_xscale('log')
         else:
-            plt.xscale('linear')
+            ax.set_xscale('linear')
 
         if parameter2.config.get('scaling', 'linear') == 'logarithmic':
-            plt.yscale('log')
+            ax.set_yscale('log')
         else:
-            plt.yscale('linear')
+            ax.set_yscale('linear')
+
+        minVal = parameter1.config.get('min')
+        maxVal = parameter1.config.get('max')
+        if (minVal > 0.001 and minVal < 10000 and maxVal > 0.001 and maxVal < 10000):
+            ax.xaxis.set_minor_formatter(mticker.ScalarFormatter())
+            ax.xaxis.set_major_formatter(mticker.ScalarFormatter())
+        else:
+            ax.xaxis.set_minor_formatter(mticker.LogFormatterSciNotation())
+            ax.xaxis.set_major_formatter(mticker.LogFormatterSciNotation())
+
+        minVal = parameter2.config.get('min')
+        maxVal = parameter2.config.get('max')
+        if (minVal > 0.001 and minVal < 10000 and maxVal > 0.001 and maxVal < 10000):
+            ax.yaxis.set_minor_formatter(mticker.ScalarFormatter())
+            ax.yaxis.set_major_formatter(mticker.ScalarFormatter())
+        else:
+            ax.yaxis.set_minor_formatter(mticker.LogFormatterSciNotation())
+            ax.yaxis.set_major_formatter(mticker.LogFormatterSciNotation())
 
         colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
-        plt.scatter(xCoords, yCoords, c=numpy.array(scores), s=numpy.array(sizes), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix', colorList, N=50000), alpha=0.7)
+        ax.scatter(xCoords, yCoords, c=numpy.array(scores), s=numpy.array(sizes), cmap=matplotlib.colors.LinearSegmentedColormap.from_list('loss_matrix', colorList, N=50000), alpha=0.7)
 
-        plt.title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
+        fig.suptitle(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
 
         ax.set_xlabel(parameter1Key)
         ax.set_ylabel(parameter2Key)
 
-        plt.tight_layout()
-        plt.savefig(fileName, dpi=200)
-        plt.close()
+        fig.set_tight_layout(True)
+        fig.savefig(fileName, dpi=200)
 
     @handleChartException
     def exportLossMatrixToCSV(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, reduction='min'):
@@ -416,7 +453,14 @@ class ResultsAnalyzer:
                         colorRow.append(float(sortedRow.index(score)) / len(row))
                     colorGrid.append(colorRow)
 
-        fig, ax = plt.subplots()
+        if self.twoParameterLossFigure is None:
+            fig, ax = plt.subplots()
+            self.twoParameterLossFigure = fig
+            self.twoParameterLossAxes = ax
+        else:
+            fig = self.twoParameterLossFigure
+            ax = self.twoParameterLossAxes
+            ax.clear()
 
         colorList = [(0, blue), (blueVal, blue), (greenVal, green), (yellowVal, yellow), (redVal, red), (1.0, red)]
 
@@ -438,7 +482,7 @@ class ResultsAnalyzer:
         ax.set_ylabel(parameter2.root[5:])
 
         # Rotate the tick labels and set their alignment.
-        plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+        # ax.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
         # Function which formats the text for display in each cell of heatmap
         def getText(i, j):
@@ -460,22 +504,29 @@ class ResultsAnalyzer:
                 ax.text(j, i, getText(i, j), ha="center", va="center", color="black", fontsize=fontSize)
 
         ax.set_title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
-        plt.tight_layout()
-        plt.savefig(fileName, dpi=200)
-        plt.close()
+        fig.set_tight_layout(True)
+        fig.savefig(fileName, dpi=200)
+
 
     @handleChartException
-    def exportSingleParameterLossChart(self, fileName, results, parameter, valueKey='loss', title='Loss Chart', cutoff=1.0, numBuckets=None):
-        values, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff, numBuckets)
+    def exportSingleParameterLossChart(self, fileName, results, parameter, valueKey='loss', title='Loss Chart', cutoff=1.0, numBuckets=None, reduction='mean'):
+        values, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff, numBuckets, bucket_reduction=reduction)
 
-        fig, ax = plt.subplots()
+        if self.singleParameterLossFigure is None:
+            fig, ax = plt.subplots()
+            self.singleParameterLossFigure = fig
+            self.singleParameterLossAxes = ax
+        else:
+            fig = self.singleParameterLossFigure
+            ax = self.singleParameterLossAxes
+            ax.clear()
 
-        plt.title(title + " for " + parameter.root[5:])
+        fig.suptitle(title + " for " + parameter.root[5:])
 
         if parameter.config.get('scaling', 'linear') == 'logarithmic':
-            plt.xscale('log')
+            ax.set_xscale('log')
         else:
-            plt.xscale('linear')
+            ax.set_xscale('linear')
 
         xCoords = [value[parameter.root[5:]] for value in values]
         yCoords = [value[valueKey] for value in values]
@@ -483,39 +534,47 @@ class ResultsAnalyzer:
         ax.set_xlabel(parameter.root[5:])
         ax.set_ylabel(valueKey)
 
-        plt.scatter(xCoords, yCoords)
+        ax.scatter(xCoords, yCoords)
+
+        minVal = parameter.config.get('min')
+        maxVal = parameter.config.get('max')
+        if (minVal > 0.001 and minVal < 10000 and maxVal > 0.001 and maxVal < 10000):
+            ax.xaxis.set_minor_formatter(mticker.ScalarFormatter())
+            ax.xaxis.set_major_formatter(mticker.ScalarFormatter())
+        else:
+            ax.xaxis.set_minor_formatter(mticker.LogFormatterSciNotation())
+            ax.xaxis.set_major_formatter(mticker.LogFormatterSciNotation())
 
         # Preserve the limits of the scatter graph when we apply the trend line
-        xlim = plt.xlim()
-        ylim = plt.ylim()
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
 
         if linearTrendLine and exponentialTrendLine:
             trendLineXCoords = [linearTrendLine[index][0] for index in range(len(linearTrendLine))]
-            plt.plot(trendLineXCoords, [(linearTrendLine[index][1], exponentialTrendLine[index][1]) for index in range(len(exponentialTrendLine))], color='red', linestyle='dashed')
+            ax.plot(trendLineXCoords, [(linearTrendLine[index][1], exponentialTrendLine[index][1]) for index in range(len(exponentialTrendLine))], color='red', linestyle='dashed')
         elif linearTrendLine:
             trendLineXCoords = [linearTrendLine[index][0] for index in range(len(linearTrendLine))]
-            plt.plot(trendLineXCoords, [linearTrendLine[index][1] for index in range(len(exponentialTrendLine))], color='red', linestyle='dashed')
+            ax.plot(trendLineXCoords, [linearTrendLine[index][1] for index in range(len(linearTrendLine))], color='red', linestyle='dashed')
         elif exponentialTrendLine:
             trendLineXCoords = [exponentialTrendLine[index][0] for index in range(len(linearTrendLine))]
-            plt.plot(trendLineXCoords, [exponentialTrendLine[index][1] for index in range(len(exponentialTrendLine))], color='red', linestyle='dashed')
+            ax.plot(trendLineXCoords, [exponentialTrendLine[index][1] for index in range(len(exponentialTrendLine))], color='red', linestyle='dashed')
 
-        plt.xlim(xlim)
-        plt.ylim(ylim)
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
 
-        plt.tight_layout()
-        plt.savefig(fileName, dpi=200)
-        plt.close()
+        fig.set_tight_layout(True)
+        fig.savefig(fileName, dpi=200)
 
     @handleChartException
-    def exportSingleParameterLossCSV(self, fileName, results, parameter, valueKey='loss', numBuckets=None):
-        newResults, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff=1.0, numBuckets=numBuckets)
+    def exportSingleParameterLossCSV(self, fileName, results, parameter, valueKey='loss', numBuckets=None, reduction='mean'):
+        newResults, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff=1.0, numBuckets=numBuckets, bucket_reduction=reduction)
 
         with open(fileName, 'wt') as file:
             writer = csv.DictWriter(file, fieldnames=[parameter.root[5:], valueKey, 'linearTrend', 'exponentialTrend'], dialect='unix')
             writer.writeheader()
             writer.writerows(newResults)
 
-    def computeParameterResultValues(self, results, parameter, valueKey='loss', cutoff=1.0, numBuckets=None):
+    def computeParameterResultValues(self, results, parameter, valueKey='loss', cutoff=1.0, numBuckets=None, bucket_reduction='mean'):
         mergedResults = {}
         for result in results:
             if isinstance(result[parameter.root[5:]], float) and result[valueKey] is not None:
@@ -527,9 +586,16 @@ class ResultsAnalyzer:
                 else:
                     mergedResults[key] = [loss]
 
-        pairs = sorted(mergedResults.items(), key=lambda v: v[0])
+        pairs = sorted(mergedResults.items(), key=lambda v: float(v[0]))
         values = [float(v[0]) for v in pairs]
-        losses = [numpy.min(v[1]) for v in pairs]
+
+        losses = []
+        if bucket_reduction == 'mean':
+            losses = [numpy.mean(v[1]) for v in pairs]
+        elif bucket_reduction == 'median':
+            losses = [numpy.median(v[1]) for v in pairs]
+        elif bucket_reduction == 'min':
+            losses = [numpy.min(v[1]) for v in pairs]
 
         threshhold = numpy.percentile(losses, cutoff * 100)
 
@@ -555,8 +621,15 @@ class ResultsAnalyzer:
                     if (bucketIndex == 0 and value <= bucket) or (value > buckets[bucketIndex - 1] and value <= bucket):
                         bucketLosses.append(filteredLosses[valueIndex])
                 if len(bucketLosses) > 0:
-                    newLosses.append(numpy.mean(bucketLosses))
-                    newValues.append(bucket)
+                    if bucket_reduction == 'mean':
+                        newLosses.append(numpy.mean(bucketLosses))
+                        newValues.append(bucket)
+                    elif bucket_reduction == 'min':
+                        newLosses.append(numpy.min(bucketLosses))
+                        newValues.append(bucket)
+                    elif bucket_reduction == 'median':
+                        newLosses.append(numpy.median(bucketLosses))
+                        newValues.append(bucket)
             filteredValues = newValues
             filteredLosses = newLosses
 
@@ -611,7 +684,7 @@ class ResultsAnalyzer:
 
         newResults = sorted(newResults, key=lambda val: val[parameter.root[5:]])
 
-        return newResults, list(zip(trendLineXCoords, linearTrendLine)) if exponentialTrendLine is not None else None, list(
+        return newResults, list(zip(trendLineXCoords, linearTrendLine)) if linearTrendLine is not None else None, list(
             zip(trendLineXCoords, exponentialTrendLine)) if exponentialTrendLine is not None else None
 
     def computeCorrelations(self, optimizer):
@@ -633,54 +706,71 @@ class ResultsAnalyzer:
         labels = []
         outputs = []
         for result in optimizer.results:
-            vector = []
-            vectorLabels = []
-            for key in keys:
-                value = result[key[5:]]
-                if 'bool' in types[key] or 'int' in types[key] or 'float' in types[key]:
-                    if isinstance(value, int) or isinstance(value, float) or isinstance(value, bool):
-                        vector.append(float(value))
-                        vectorLabels.append(key + ".number")
-                    else:
-                        vector.append(-1)
-                        vectorLabels.append(key + ".number")
-                if 'NoneType' in types[key]:
-                    if value is None:
-                        vector.append(value)
-                        vectorLabels.append(key + ".none")
-                    else:
-                        vector.append(-1)
-                        vectorLabels.append(key + ".none")
-                if 'str' in types[key]:
-                    classes = [v for v in values[key] if isinstance(v, str)]
+            if result['loss'] is not None:
+                vector = []
+                vectorLabels = []
+                for key in keys:
+                    value = result[key[5:]]
+                    if 'bool' in types[key] or 'int' in types[key] or 'float' in types[key]:
+                        if isinstance(value, int) or isinstance(value, float) or isinstance(value, bool):
+                            vector.append(float(value))
+                            vectorLabels.append(key + ".number")
+                        else:
+                            vector.append(-1)
+                            vectorLabels.append(key + ".number")
+                    if 'NoneType' in types[key]:
+                        if value is None:
+                            vector.append(value)
+                            vectorLabels.append(key + ".none")
+                        else:
+                            vector.append(-1)
+                            vectorLabels.append(key + ".none")
+                    if 'str' in types[key]:
+                        classes = [v for v in values[key] if isinstance(v, str)]
 
-                    if isinstance(value, str):
-                        for v in classes:
-                            if value == v:
-                                vector.append(1.0)
-                            else:
-                                vector.append(0.0)
-                            vectorLabels.append(key + ".class." + v)
-                    else:
-                        for v in classes:
-                            vector.append(0)
-                            vectorLabels.append(key + ".class." + v)
-            vectors.append(vector)
-            outputs.append(result['loss'])
-            if not labels:
-                labels = vectorLabels
+                        if isinstance(value, str):
+                            for v in classes:
+                                if value == v:
+                                    vector.append(1.0)
+                                else:
+                                    vector.append(0.0)
+                                vectorLabels.append(key + ".class." + v)
+                        else:
+                            for v in classes:
+                                vector.append(0)
+                                vectorLabels.append(key + ".class." + v)
+                vectors.append(vector)
+                outputs.append(result['loss'])
+                if not labels:
+                    labels = vectorLabels
 
-        model = sklearn.covariance.LedoitWolf()
-        model.fit(numpy.array(vectors), numpy.array(outputs))
+        covarianceModel = sklearn.covariance.LedoitWolf()
+        covarianceModel.fit(numpy.array(vectors), numpy.array(outputs))
 
-        covariances = model.covariance_
+        correlationModel = sklearn.linear_model.LinearRegression()
+        correlationModel.fit(numpy.array(vectors), numpy.array(outputs))
+        coefficients = correlationModel.coef_
+
+
+        covariances = covarianceModel.covariance_
         correlations = numpy.zeros_like(covariances)
-
         deviations = numpy.std(vectors, axis=0)
 
         for label1Index in range(len(labels)):
             for label2Index in range(len(labels)):
-                correlations[label1Index][label2Index] = covariances[label1Index][label2Index] / (deviations[label1Index] * deviations[label2Index])
+                if label1Index != label2Index:
+                    correlations[label1Index][label2Index] = covariances[label1Index][label2Index] / (deviations[label1Index] * deviations[label2Index])
+
+        correlationScaling = (20.0) / (numpy.max(correlations) - numpy.min(correlations))
+        correlations *= correlationScaling
+
+        coefficientScaling = (20.0) / (numpy.max(coefficients) - numpy.min(coefficients))
+        for label1Index in range(len(labels)):
+            correlations[label1Index][label1Index] = coefficients[label1Index] * coefficientScaling
+
+        for label1Index in range(len(labels)):
+            for label2Index in range(len(labels)):
+                correlations[label1Index][label2Index] = roundPrecision(correlations[label1Index][label2Index], 3)
 
         return correlations, labels
 
@@ -803,6 +893,8 @@ class ResultsAnalyzer:
                         scoreRow.append(numpy.min([result[valueKey] for result in column if result[valueKey] is not None]))
                     elif reduction == 'mean':
                         scoreRow.append(numpy.mean([result[valueKey] for result in column if result[valueKey] is not None]))
+                    elif reduction == 'median':
+                        scoreRow.append(numpy.median([result[valueKey] for result in column if result[valueKey] is not None]))
                 else:
                     scoreRow.append(None)
             scoreGrid.append(scoreRow)

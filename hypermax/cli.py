@@ -43,4 +43,6 @@ def main():
 
     optimizer.runOptimization()
 
-    hypermax.cui.launchHypermaxUI(optimizer)
+    if config_data.get("ui", {}).get("enabled", True):
+        hypermax.cui.launchHypermaxUI(optimizer)
+

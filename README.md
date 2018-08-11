@@ -124,7 +124,10 @@ The hyperparameter correlations can be viewed from within the user-interface or 
 your results directory. The correlations can help you tell which hyper-parameter combinations are moving the
 needle the most. Remember that a large value either in the negative or positive indicates a strong correlation
 between those two hyper-parameters. Values close to 0 indicate that there is little correlation between those
-hyper-parameters.
+hyper-parameters. The diagonal access will give you the single-parameter correlations.
+
+It should also be noted that these numbers get rescaled to fall roughly between -10 and +10 (preserving the original sign),
+and thus are not the mathematically defined covariances. This is done to make it easier to see the important relationships.
 
 ## Single Parameter Loss Charts
 
