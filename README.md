@@ -1,10 +1,15 @@
 # Introduction
 
 Hypermax is a power tool for optimizing algorithms. It builds on the powerful TPE algorithm with additional features
-meant to help you get to your optimal hyper parameters faster and easier. Hypermax automatically gives you a variety of charts and graphs
-based on your hyperparameter results. Hypermax can be restarted easily in-case of a crash. Hypermax can monitor the CPU and RAM usage
-of your algorithms - automatically killing your process if it takes too long to execute or uses too much RAM. Hypermax even has a UI.
-Hypermax makes it easier and faster to get to those high performing hyper-parameters that you crave so much. Start optimizing today!
+meant to help you get to your optimal hyper parameters faster and easier. We all our algorithm Adaptive-TPE, and it
+outperforms vanilla TPE across a wide variety of different hyperparameter spaces.
+
+In addition, Hypermax automatically gives you a variety of charts and graphs based on your hyperparameter results.
+Hypermax can be restarted easily in-case of a crash. Hypermax can monitor the CPU and RAM usage of your algorithms - 
+automatically killing your process if it takes too long to execute or uses too much RAM. Hypermax even has a UI.
+Hypermax makes it easier and faster to get to those high performing hyper-parameters that you crave so much.
+
+Start optimizing today!
 
 ![Screenshot of Hypermax](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/main_screen.png "Screenshot of Hypermax")
 
@@ -73,7 +78,7 @@ And lastly, you need to define your hyper parameter search:
 
     {
         "search": {
-            "method": "tpe",
+            "method": "atpe",
             "iterations": 1000
         }
     }
@@ -462,6 +467,9 @@ At 10 seconds, the penalty is:
 
 Longer times will have even larger penalties.
 
+# Details on Adaptive-TPE
+
+See here: https://docs.google.com/document/d/1JpQZWM8S-n4NLq4g216mlE0xWehMErOUKtGUf3EUOSU/edit?usp=sharing
 
 
 # Todo & Wishlist
