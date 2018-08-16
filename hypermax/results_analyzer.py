@@ -601,7 +601,6 @@ class ResultsAnalyzer:
                     mergedResults[key].append(loss)
                 else:
                     mergedResults[key] = [loss]
-        # print(mergedResults)
 
         pairs = sorted(mergedResults.items(), key=lambda v: float(v[0]))
         values = [float(v[0]) for v in pairs]
