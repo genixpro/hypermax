@@ -17,6 +17,7 @@ import functools
 import atexit
 import jsonschema
 from hypermax.execution import Execution
+from hypermax.hyperparameter import Hyperparameter
 from hypermax.results_analyzer import ResultsAnalyzer
 
 from hypermax.configuration import Configuration
@@ -57,6 +58,9 @@ class Optimizer:
         self.resultsExportFuture = None
 
         self.currentTrials = []
+        self.allWorkers = set(range(self.config.data['function'].get('parallel', 1)))
+        self.occupiedWorkers = set()
+        self.trialNumber = 0
 
 
     def __del__(self):
@@ -87,21 +91,22 @@ class Optimizer:
         def sample(parameters):
             nonlocal params
             params = parameters
-            return {"loss": 0, 'status': 'ok'}
+            return {"loss": 0.5, 'status': 'ok'}
 
+        trials = self.convertResultsToTrials(self.results)
         if self.searchConfig['method'] == 'tpe':
             hyperopt.fmin(fn=sample,
                           space=self.space,
-                          algo=functools.partial(hyperopt.tpe.suggest, n_EI_candidates=24, gamma=0.25),
+                          algo=functools.partial(hyperopt.tpe.suggest, n_EI_candidates=4, gamma=0.25),
                           max_evals=1,
-                          trials=self.convertResultsToTrials(self.results),
+                          trials=trials,
                           rstate=rstate)
         elif self.searchConfig['method'] == 'random':
             hyperopt.fmin(fn=sample,
                           space=self.space,
                           algo=hyperopt.rand.suggest,
                           max_evals=1,
-                          trials=self.convertResultsToTrials(self.results),
+                          trials=trials,
                           rstate=rstate)
 
         return params
@@ -116,19 +121,23 @@ class Optimizer:
         self.best = best
         self.bestLoss = bestLoss
 
-    def runOptimizationRound(self):
-        jobs = self.config.data['function'].get('parallel', 1)
-        samples = [self.sampleNext() for job in range(jobs)]
 
-        def testSample(params, trial, job):
+    def startOptmizationJob(self):
+        availableWorkers = list(sorted(self.allWorkers.difference(self.occupiedWorkers)))
+
+        sampleWorker = availableWorkers[0]
+        sample = self.sampleNext()
+
+        def testSample(params, trial, worker):
             currentTrial = {
                 "start": datetime.datetime.now(),
                 "trial": trial,
+                "worker": worker,
                 "params": copy.deepcopy(params)
             }
             self.currentTrials.append(currentTrial)
             start = datetime.datetime.now()
-            execution = Execution(self.config.data['function'], parameters=params, worker_n=job)
+            execution = Execution(self.config.data['function'], parameters=params, worker_n=worker)
             modelResult = execution.run()
             end = datetime.datetime.now()
 
@@ -178,29 +187,31 @@ class Optimizer:
 
             return result
 
-        futures = []
-        for index, sample in enumerate(samples):
-            futures.append(self.threadExecutor.submit(testSample, sample, len(self.results) + index, index))
+        def onCompletion(worker, future):
+            self.occupiedWorkers.remove(worker)
 
-        concurrent.futures.wait(futures)
+            self.results.append(future.result())
 
-        results = [future.result() for future in futures]
+            self.computeCurrentBest()
 
-        self.results = self.results + results
-
-        self.computeCurrentBest()
-
-        # if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results)>5):
-        #     self.resultsExportFuture = self.threadExecutor.submit(lambda: self.resultsAnalyzer.outputResultsFolder(self, self.config.data.get("results", {}).get("graphs", True)))
-        # else:
-        self.resultsAnalyzer.outputResultsFolder(self, False)
-
-        if 'hypermax_results' in self.config.data:
-            if self.trialsSinceResultsUpload is None or self.trialsSinceResultsUpload >= self.config.data['hypermax_results']['upload_frequency']:
-                self.saveResultsToHypermaxResultsRepository()
-                self.trialsSinceResultsUpload = 0
+            if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results) > 5):
+                self.resultsExportFuture = self.threadExecutor.submit(
+                    lambda: self.resultsAnalyzer.outputResultsFolder(self, self.config.data.get("results", {}).get("graphs", True)))
             else:
-                self.trialsSinceResultsUpload += len(results)
+                self.resultsAnalyzer.outputResultsFolder(self, False)
+
+            if 'hypermax_results' in self.config.data:
+                if self.trialsSinceResultsUpload is None or self.trialsSinceResultsUpload >= self.config.data['hypermax_results']['upload_frequency']:
+                    self.saveResultsToHypermaxResultsRepository()
+                    self.trialsSinceResultsUpload = 1
+                else:
+                    self.trialsSinceResultsUpload += 1
+
+        self.occupiedWorkers.add(sampleWorker)
+        sampleFuture = self.threadExecutor.submit(testSample, sample, self.trialNumber, sampleWorker)
+        sampleFuture.add_done_callback(functools.partial(onCompletion, sampleWorker))
+        self.trialNumber += 1
+        return sampleFuture
 
     def runOptimization(self):
         self.thread.start()
@@ -208,8 +219,19 @@ class Optimizer:
     def optimizationThread(self):
         # Make sure we output basic results if the process is killed for some reason.
         atexit.register(lambda: self.resultsAnalyzer.outputResultsFolder(self, False))
-        while len(self.results) < self.totalTrials:
-            self.runOptimizationRound()
+
+        futures = []
+        for worker in range(min(len(self.allWorkers), self.totalTrials - len(self.results))):
+            futures.append(self.startOptmizationJob())
+
+        while (len(self.results) + len(self.currentTrials)) < self.totalTrials:
+            completedFuture = list(concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)[0])[0]
+            futures.remove(completedFuture)
+            time.sleep(0.05)
+            futures.append(self.startOptmizationJob())
+
+        concurrent.futures.wait(futures)
+
         # We are completed, so we can allocate a full contingent of workers
         self.resultsAnalyzer.outputResultsFolder(self, True, workers=4)
 
@@ -237,6 +259,8 @@ class Optimizer:
     def convertResultsToTrials(self, results):
         trials = hyperopt.Trials()
 
+        parameters = Hyperparameter(self.config.data['hyperparameters']).getFlatParameters()
+
         for resultIndex, result in enumerate(results):
             data = {
                 'book_time': datetime.datetime.now(),
@@ -257,10 +281,20 @@ class Optimizer:
 
             for key in result.keys():
                 if key not in self.resultInformationKeys:
+                    matchingParameters = [parameter for parameter in parameters if parameter.root[5:] == key]
+                    if len(matchingParameters)==0:
+                        raise ValueError("Our hyperparameter search space did not contain a " + key + " parameter.")
+
+                    parameter = matchingParameters[0]
+
                     value = result[key]
                     if value is not "":
-                        data['misc']['idxs']['root.' + key] = [resultIndex]
-                        data['misc']['vals']['root.' + key] = [value]
+                        if 'enum' in parameter.config:
+                            data['misc']['idxs']['root.' + key] = [resultIndex]
+                            data['misc']['vals']['root.' + key] = [parameter.config['enum'].index(value)]
+                        elif parameter.config['type'] == 'number':
+                            data['misc']['idxs']['root.' + key] = [resultIndex]
+                            data['misc']['vals']['root.' + key] = [value]
                     else:
                         data['misc']['idxs']['root.' + key] = []
                         data['misc']['vals']['root.' + key] = []
@@ -271,8 +305,9 @@ class Optimizer:
 
 
     def exportResultsCSV(self, fileName):
+        fieldNames = self.resultInformationKeys + sorted(set(self.results[0].keys()).difference(set(self.resultInformationKeys))) # Make sure we keep the order of the field names consistent when writing the csv
         with open(fileName, 'wt') as file:
-            writer = csv.DictWriter(file, fieldnames=self.results[0].keys() if len(self.results) > 0 else [], dialect='unix')
+            writer = csv.DictWriter(file, fieldnames=fieldNames if len(self.results) > 0 else [], dialect='unix')
             writer.writeheader()
             writer.writerows(self.results)
 
@@ -301,6 +336,7 @@ class Optimizer:
                 newResults.append(newResult)
             self.results = newResults
         self.computeCurrentBest()
+        self.trialNumber = len(self.results)
 
     def saveResultsToHypermaxResultsRepository(self):
         try:

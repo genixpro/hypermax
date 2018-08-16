@@ -35,7 +35,8 @@ def handleChartException(function):
         try:
             return function(*args, **kwargs)
         except Exception as e:
-            plt.close()
+            plt.close('all')
+            # print(e)
             raise # reraise the exception and allow it to bubble so developers can catch why the charts aren't being generated.
 
     return wrapper
@@ -72,6 +73,14 @@ class ResultsAnalyzer:
         self.singleParameterLossAxes = None
         self.twoParameterScatterAxes = None
         self.twoParameterLossAxes = None
+
+    def __del__(self):
+        if self.singleParameterLossFigure:
+            plt.close(self.singleParameterLossFigure)
+        elif self.twoParameterLossFigure:
+            plt.close(self.twoParameterLossFigure)
+        elif self.twoParameterScatterFigure:
+            plt.close(self.twoParameterScatterFigure)
 
     @classmethod
     def configurationSchema(self):
@@ -202,15 +211,22 @@ class ResultsAnalyzer:
             with open(os.path.join(directory, 'best.json'), 'wt') as paramsFile:
                 json.dump(optimizer.best, paramsFile, indent=4, sort_keys=True)
 
-        if len(optimizer.results) > 5:
-            correlationsFile = os.path.join(directory, 'correlations.csv')
-            self.exportCorrelationsToCSV(correlationsFile, optimizer)
+        with open(os.path.join(directory, 'current_trials.json'), 'wt') as paramsFile:
+            trials = []
+            for trial in optimizer.currentTrials:
+                trialData = {key: value for key,value in trial.items() if key != 'start'}
+                trials.append(trialData)
+            trials = list(sorted(trials, key=lambda trial: trial['worker']))
+            json.dump(trials, paramsFile, indent=4, sort_keys=True)
 
         def onChartCompleted(e):
             self.completedCharts += 1
 
         # Only do these results if detailed is enabled, since they take a lot more computation
         if len(optimizer.results) > 5 and detailed:
+            correlationsFile = os.path.join(directory, 'correlations.csv')
+            self.exportCorrelationsToCSV(correlationsFile, optimizer)
+
             self.completedCharts = 0
             self.totalCharts = 0
             self.totalCharts = len(parameters) + (len(parameters) - 1) * (len(parameters) - 1)
@@ -577,7 +593,7 @@ class ResultsAnalyzer:
     def computeParameterResultValues(self, results, parameter, valueKey='loss', cutoff=1.0, numBuckets=None, bucket_reduction='mean'):
         mergedResults = {}
         for result in results:
-            if isinstance(result[parameter.root[5:]], float) and result[valueKey] is not None:
+            if (isinstance(result[parameter.root[5:]], int) or isinstance(result[parameter.root[5:]], float) or isinstance(result[parameter.root[5:]], bool)) and result[valueKey] is not None:
                 value = result[parameter.root[5:]]
                 loss = result[valueKey]
                 key = str(roundPrecision(value, 3))
@@ -585,6 +601,7 @@ class ResultsAnalyzer:
                     mergedResults[key].append(loss)
                 else:
                     mergedResults[key] = [loss]
+        # print(mergedResults)
 
         pairs = sorted(mergedResults.items(), key=lambda v: float(v[0]))
         values = [float(v[0]) for v in pairs]

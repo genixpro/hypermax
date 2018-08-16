@@ -155,6 +155,7 @@ class Execution:
                     else:
                         raise
 
+            print(['ssh', host, self.config['command']])
             process = subprocess.Popen(['ssh', host, self.config['command']], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
             atexit.register(lambda: process.kill())
 
@@ -233,7 +234,7 @@ class Execution:
                 if cutoffIndex == -1:
                     cutoffIndex = 0
 
-            self.scriptToken = ''
+                self.scriptToken = ''
 
             if cutoffIndex == -1:
                 self.result = {"status": "fail", "loss": None, "log": output, "error": "Did not find result object in the output from the model script."}
