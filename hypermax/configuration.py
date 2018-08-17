@@ -7,10 +7,10 @@ class Configuration:
 
 
 
-    def createHyperparameterSpace(self):
+    def createHyperparameterSpace(self, lockedValues=None):
         param = Hyperparameter(self.data['hyperparameters'])
 
-        space = param.createHyperoptSpace()
+        space = param.createHyperoptSpace(lockedValues)
 
         return space
 

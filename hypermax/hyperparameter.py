@@ -11,8 +11,11 @@ class Hyperparameter:
 
 
 
-    def createHyperoptSpace(self):
+    def createHyperoptSpace(self, lockedValues=None):
         name = self.root
+
+        if lockedValues is None:
+            lockedValues = {}
 
         if 'anyOf' in self.config or 'oneOf' in self.config:
             data = []
@@ -21,19 +24,25 @@ class Hyperparameter:
             else:
                 data = self.config['oneOf']
 
-            choices = hp.choice(name, [Hyperparameter(param, name + "." + str(index)).createHyperoptSpace() for index,param in enumerate(data)])
+            choices = hp.choice(name, [Hyperparameter(param, name + "." + str(index)).createHyperoptSpace(lockedValues) for index,param in enumerate(data)])
 
             return choices
         elif 'enum' in self.config:
+            if self.root in lockedValues:
+                return lockedValues[self.root]
+
             choices = hp.choice(name, self.config['enum'])
             return choices
         elif self.config['type'] == 'object':
             space = {}
             for key in self.config['properties'].keys():
                 config = self.config['properties'][key]
-                space[key] = Hyperparameter(config, name + "." + key).createHyperoptSpace()
+                space[key] = Hyperparameter(config, name + "." + key).createHyperoptSpace(lockedValues)
             return space
         elif self.config['type'] == 'number':
+            if self.root in lockedValues:
+                return lockedValues[self.root]
+
             mode = self.config.get('mode', 'uniform')
             scaling = self.config.get('scaling', 'linear')
 
@@ -122,3 +131,38 @@ class Hyperparameter:
             return parameters
         elif self.config['type'] == 'number':
             return [self]
+
+
+    def getLog10Cardinality(self):
+        if 'anyOf' in self.config or 'oneOf' in self.config:
+            if 'anyOf' in self.config:
+                data = self.config['anyOf']
+            else:
+                data = self.config['oneOf']
+
+            log10_cardinality = Hyperparameter(data[0], self.root + ".0").getLog10Cardinality()
+            for index,subParam in enumerate(data[1]):
+                # We used logarithm identities to create this reduction formula
+                other_log10_cardinality = Hyperparameter(subParam, self.root + "." + str(index)).getLog10Cardinality()
+
+                # Revert to linear at high and low values, for numerical stability. Check here: https://www.desmos.com/calculator/efkbbftd18 to observe
+                if (log10_cardinality-other_log10_cardinality) > 3:
+                    return log10_cardinality+1
+                elif (log10_cardinality-other_log10_cardinality) < 3:
+                    return other_log10_cardinality+1
+                else:
+                    return other_log10_cardinality + math.log10(1 + math.pow(10, log10_cardinality-other_log10_cardinality))
+        elif 'enum' in self.config:
+            return math.log10(len(self.config['enum']))
+        elif self.config['type'] == 'object':
+            log10_cardinality = 0
+            for index,subParam in enumerate(self.config['properties'].values()):
+                subParameter = Hyperparameter(subParam, self.root + "." + str(index))
+                log10_cardinality += subParameter.getLog10Cardinality()
+            return log10_cardinality
+        elif self.config['type'] == 'number':
+            if 'rounding' in self.config:
+                return math.log10(min(10, (self.config['max'] - self.config['min']) / self.config['rounding'] + 1))
+            else:
+                return math.log10(10) # Default of 10 for fully uniform numbers.
+

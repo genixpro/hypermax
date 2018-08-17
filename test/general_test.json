@@ -75,10 +75,10 @@
     "parallel": 5
   },
   "search": {
-      "method": "tpe",
+      "method": "atpe",
       "iterations": 1000
   },
-  "hypermax_results": {
-      "name": "hypermax_unit_test"
+  "ui": {
+    "enabled": false
   }
 }

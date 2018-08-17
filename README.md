@@ -1,7 +1,7 @@
 # Introduction
 
 Hypermax is a power tool for optimizing algorithms. It builds on the powerful TPE algorithm with additional features
-meant to help you get to your optimal hyper parameters faster and easier. We all our algorithm Adaptive-TPE, and it
+meant to help you get to your optimal hyper parameters faster and easier. We call our algorithm Adaptive-TPE, and it
 outperforms vanilla TPE across a wide variety of different hyperparameter spaces.
 
 In addition, Hypermax automatically gives you a variety of charts and graphs based on your hyperparameter results.

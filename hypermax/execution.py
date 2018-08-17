@@ -249,7 +249,6 @@ class Execution:
                     self.result['log'] = output[:cutoffIndex]
                     self.result['error'] = None
                     self.process = None
-                    print(self.result)
                     return self.result
                 except json.JSONDecodeError as e:
                     self.result = {"status": "fail", "loss": None, "log": output, "error": "Unable to decode the JSON result object from the model."}

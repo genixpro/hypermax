@@ -14,8 +14,10 @@ import random
 import subprocess
 import concurrent.futures
 import functools
+import math
 import atexit
 import jsonschema
+import scipy.stats
 from hypermax.execution import Execution
 from hypermax.hyperparameter import Hyperparameter
 from hypermax.results_analyzer import ResultsAnalyzer
@@ -108,6 +110,84 @@ class Optimizer:
                           max_evals=1,
                           trials=trials,
                           rstate=rstate)
+        elif self.searchConfig['method'] == 'atpe':
+            log10_cardinality = Hyperparameter(self.config.data['hyperparameters']).getLog10Cardinality()
+
+            # This equation was derived from research, see https://drive.google.com/open?id=1JpQZWM8S-n4NLq4g216mlE0xWehMErOUKtGUf3EUOSU
+            n_EI_candidates = int(max(2, min(50, int(1 + 40 * math.pow(10, -0.1 * log10_cardinality)))))
+
+            if len(self.results) > 20:
+                # Calculate statistics on the current results
+                losses = numpy.array([result['loss'] for result in self.results if result['loss'] is not None])
+                median = numpy.median(losses)
+                standard_deviation = numpy.std(losses)
+                skew = scipy.stats.skew(losses)
+
+                # These equations were derived from research, see https://drive.google.com/open?id=1JpQZWM8S-n4NLq4g216mlE0xWehMErOUKtGUf3EUOSU
+                gamma = max(0.25, min(3.0, 0.23 + 0.53 * skew + log10_cardinality * 0.011 + (standard_deviation / median) * -0.3))
+                secondaryCutoff = max(0, min(1, 0.65 + (standard_deviation / median) * -0.07 + log10_cardinality * 0.02))
+            else:
+                gamma = 1.0
+                secondaryCutoff = 0.0
+
+            totalWeight = 0
+            correlations = {}
+            parameters = Hyperparameter(self.config.data['hyperparameters']).getFlatParameters()
+
+            secondaryParameters = []
+
+            if len(self.results) > 20:
+                for parameter in parameters:
+                    if 'enum' in parameter.config or parameter.config['type'] == 'number':
+                        params = []
+                        losses = []
+                        for result in self.results:
+                            if result[parameter.root[5:]] is None or result[parameter.root[5:]] == '' or result['loss'] is None:
+                                continue
+                            elif 'enum' in parameter.config:
+                                if isinstance(result[parameter.root[5:]], str):
+                                    params.append(parameter.config['enum'].index(result[parameter.root[5:]]))
+                                    losses.append(result['loss'])
+                                else:
+                                    params.append(result[parameter.root[5:]])
+                                    losses.append(result['loss'])
+                            elif parameter.config['type'] == 'number':
+                                params.append(result[parameter.root[5:]])
+                                losses.append(result['loss'])
+
+                        if len(set(params)) < 2 or len(set(losses)) < 2:
+                            correlations[parameter.root[5:]] = 0.5
+                        else:
+                            correlation = abs(scipy.stats.spearmanr(numpy.array(params), numpy.array(losses))[0])
+                            correlations[parameter.root[5:]] = correlation
+                            totalWeight += correlation
+
+                threshold = totalWeight * secondaryCutoff
+
+                secondaryParameters = []
+                cumulative = totalWeight
+                # Sort properties by their weight
+                sortedParameters = sorted(parameters, key=lambda parameter: -correlations[parameter.root[5:]])
+                for parameter in sortedParameters:
+                    if 'enum' in parameter.config or parameter.config['type'] == 'number':
+                        if cumulative < threshold:
+                            secondaryParameters.append(parameter)
+
+                        cumulative -= correlations[parameter.root[5:]]
+
+            # For each secondary parameter, we have a 50-50 probability of locking it into its current best value
+            lockedValues = {}
+            for parameter in secondaryParameters:
+                if random.uniform(0, 1) < 0.5:
+                    lockedValues[parameter.root] = self.best[parameter.root[5:]]
+
+            hyperopt.fmin(fn=sample,
+                          space=self.config.createHyperparameterSpace(lockedValues),
+                          algo=functools.partial(hyperopt.tpe.suggest, n_EI_candidates=n_EI_candidates, gamma=gamma, n_startup_jobs=10),
+                          max_evals=1,
+                          trials=trials,
+                          rstate=rstate)
+
 
         return params
 
