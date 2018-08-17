@@ -37,7 +37,7 @@ def handleChartException(function):
         except Exception as e:
             plt.close('all')
             # print(e)
-            raise # reraise the exception and allow it to bubble so developers can catch why the charts aren't being generated.
+            # raise # reraise the exception and allow it to bubble so developers can catch why the charts aren't being generated.
 
     return wrapper
 
