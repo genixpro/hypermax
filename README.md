@@ -21,10 +21,15 @@ Install using pip:
     
 Python3 is required.    
 
-# Getting Started
+# Getting Started (Using Python Library)
 
 In Hypermax, you define your hyper-parameter search, including the variables, method of searching, and 
 loss functions, using a JSON object as you configuration file.
+
+
+
+# Getting Started (Using CLI)
+
 
 Here is an example. Lets say you have the following file, model.py:
 
@@ -58,7 +63,7 @@ You configure your hyper parameter search space by defining a JSON-schema object
                     "type": "number",
                     "min": 1,
                     "max": 1000,
-                    "scaling": "exponential"
+                    "scaling": "logarithmic"
                 }
             }
         }
@@ -94,7 +99,7 @@ Pulling it all together, you create a file like this search.json, defining your 
                     "type": "number",
                     "min": 1,
                     "max": 1000,
-                    "scaling": "exponential"
+                    "scaling": "logarithmic"
                 }
             }
         },
@@ -510,6 +515,7 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
 - General User Interface:
     - Change User-Interface code to use proper organized classes and not ad-hoc style like it is currently
     - View recently trained models
+    - Able to view Training Loss VS. Testing Loss on UI
     - View models which had errors
     - Fix UI issues related to data-tables (such as in hyperparameter correlations)
     - Able to adjust min,max,smoothing, and domain of the loss chart

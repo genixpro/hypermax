@@ -274,6 +274,9 @@ class Optimizer:
 
             self.computeCurrentBest()
 
+            if not self.config.data.get("ui", {}).get("enabled", True):
+                pprint(future.result())
+
             if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results) > 5):
                 self.resultsExportFuture = self.threadExecutor.submit(
                     lambda: self.resultsAnalyzer.outputResultsFolder(self, self.config.data.get("results", {}).get("graphs", True)))

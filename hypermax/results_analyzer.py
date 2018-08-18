@@ -58,9 +58,9 @@ class ResultsAnalyzer:
 
         # Determine if the results directory exists already. If so, we add a suffix
         increment = 0
-        while os.path.exists(resultsConfig['directory'] + "_" + str(increment)):
+        while os.path.exists(resultsConfig.get('directory', 'results') + "_" + str(increment)):
             increment += 1
-        self.directory = resultsConfig['directory'] + "_" + str(increment)
+        self.directory = resultsConfig.get('directory', 'results') + "_" + str(increment)
 
         self.fig = None
         self.completedCharts = 0
