@@ -41,7 +41,7 @@ def main():
                         optimizer.resultsAnalyzer.directory = directory
                     break
 
-    optimizer.runOptimization()
+    optimizer.runOptimizationThread()
 
     if config_data.get("ui", {}).get("enabled", True):
         hypermax.cui.launchHypermaxUI(optimizer)

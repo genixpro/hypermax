@@ -54,7 +54,8 @@ class Execution:
                             "constant": "python_function"
                         },
                         "module": {"type": "string"},
-                        "name": {"type": "string"}
+                        "name": {"type": "string"},
+                        "func": {}
                     },
                     "required": ['type', 'module', 'name']
                 },
@@ -196,12 +197,16 @@ class Execution:
             :return: A standard 'results' object.
         """
         # print("Running: ", parameters)
+        if 'func' in self.config:
+            return self.config['func']
+
         if self.config['type'] == 'python_function' or self.config['type'] == 'remote':
             process = self.startSubprocess()
             output = ''
             while process.returncode is None and "loss" not in output and 'no process found' not in output:
                 process.poll()
                 output += str(process.stdout.read(1), 'utf8')
+                # print(output)
                 try:
                     if self.shouldKillProcess():
                         self.killed = True
@@ -222,6 +227,7 @@ class Execution:
                 return self.result
 
             output += str(process.stdout.read(), 'utf8')
+            # print(output)
 
             if self.config['type'] == 'python_function':
                 cutoffIndex = output.find(self.scriptToken)
