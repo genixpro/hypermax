@@ -198,7 +198,7 @@ class Execution:
         """
         # print("Running: ", parameters)
         if 'func' in self.config:
-            return self.config['func']
+            return self.config['func'](self.parameters)
 
         if self.config['type'] == 'python_function' or self.config['type'] == 'remote':
             process = self.startSubprocess()
