@@ -24,7 +24,7 @@ class Execution:
             :param parameters: The hyper parameters for this model.
             :param worker_n: When executing models in parallel, this defines which worker this execution is.
         """
-        jsonschema.validate(config, self.configurationSchema())
+        # jsonschema.validate(config, self.configurationSchema())
 
         # Perform one additional validation
         if ('auto_kill_max_time' in config or 'auto_kill_max_ram' in config or 'auto_kill_max_system_ram' in config) and ('auto_kill_loss' not in config):
