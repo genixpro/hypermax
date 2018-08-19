@@ -11,6 +11,7 @@ import matplotlib
 import matplotlib.cm
 import matplotlib.style as mplstyle
 import matplotlib.pyplot as plt
+from pprint import pprint
 import concurrent.futures
 import colors
 import traceback
@@ -21,6 +22,7 @@ import random
 import json
 import atexit
 import matplotlib.ticker as mticker
+import traceback
 
 
 def handleChartException(function):
@@ -36,7 +38,7 @@ def handleChartException(function):
             return function(*args, **kwargs)
         except Exception as e:
             plt.close('all')
-            # print(e)
+            # traceback.print_exc()
             # raise # reraise the exception and allow it to bubble so developers can catch why the charts aren't being generated.
 
     return wrapper
@@ -237,8 +239,8 @@ class ResultsAnalyzer:
             with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
                 for parameter1 in parameters:
                     # self.generateSingleParameterExports(list(optimizer.results), parameter1)
-                    futures.append(executor.submit(self.generateSingleParameterExports, list(optimizer.results), parameter1, directory))
                     if parameter1.config['type'] == 'number':
+                        futures.append(executor.submit(self.generateSingleParameterExports, list(optimizer.results), parameter1, directory))
                         for parameter2 in parameters:
                             if parameter2.config['type'] == 'number':
                                 if parameter1.root != parameter2.root:
@@ -678,10 +680,12 @@ class ResultsAnalyzer:
                         return a * numpy.exp(-b * x) + c
 
                     warnings.simplefilter('ignore', scipy.optimize.OptimizeWarning)
+                    oldErrorSettings = numpy.seterr(all='ignore')
                     popt, pcov = scipy.optimize.curve_fit(exponenial_func, filteredValues, filteredLosses, p0=(1, start_b, 1),
                                                           bounds=([-numpy.inf, -abs(start_b * 1e1), -numpy.inf], [+numpy.inf, +abs(start_b * 1e1), +numpy.inf]))
                     exponentialTrendValues = exponenial_func(numpy.array(filteredValues).copy(), *popt)
                     exponentialTrendLine = exponenial_func(numpy.array(trendLineXCoords).copy(), *popt)
+                    numpy.seterr(**oldErrorSettings)
 
             except RuntimeError as e:
                 # Scipy gives a run-time error if it fails to find an exponential curve that fits the data
@@ -775,7 +779,10 @@ class ResultsAnalyzer:
         for label1Index in range(len(labels)):
             for label2Index in range(len(labels)):
                 if label1Index != label2Index:
-                    correlations[label1Index][label2Index] = covariances[label1Index][label2Index] / (deviations[label1Index] * deviations[label2Index])
+                    if deviations[label1Index] * deviations[label2Index] == 0:
+                        correlations[label1Index][label2Index] = 0
+                    else:
+                        correlations[label1Index][label2Index] = covariances[label1Index][label2Index] / (deviations[label1Index] * deviations[label2Index])
 
         correlationScaling = (20.0) / (numpy.max(correlations) - numpy.min(correlations))
         correlations *= correlationScaling
@@ -829,12 +836,12 @@ class ResultsAnalyzer:
                 bottom = buckets[0] - 1.0
 
         buckets = []
-        if parameter.config['scaling'] == 'linear':
+        if parameter.config.get('scaling', 'linear') == 'linear':
             domain = top - bottom
             buckets = [bottom]
             while len(buckets) <= (numBuckets):
                 buckets = buckets + [buckets[-1] + (domain / numBuckets)]
-        elif parameter.config['scaling'] == 'logarithmic':
+        elif parameter.config.get('scaling', 'linear') == 'logarithmic':
             logMax = math.log(top)
             if bottom > 0:
                 logMin = math.log(bottom)
