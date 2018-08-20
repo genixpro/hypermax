@@ -1,0 +1,69 @@
+
+{
+	"hyperparameters": {
+	    "type": "object",
+	    "properties": {
+		"activation": {
+		    "type": "string",
+		    "enum": ["relu", "elu"]
+		},
+		"layer1_filters": {
+		    "type": "number",
+		    "min": 16,
+		    "max": 128,
+		    "scaling": "logarithmic",
+		    "rounding": 1
+		},
+		"layer1_filter_size": {
+		    "type": "number",
+		    "min": 2,
+		    "max": 3,
+		    "rounding": 1
+		},
+		"layer1_dropout": {
+		    "type": "number",
+		    "min": 0.1,
+		    "max": 0.5
+		},
+		"layer2_filters": {
+		    "type": "number",
+		    "min": 16,
+		    "max": 128,
+		    "scaling": "logarithmic",
+		    "rounding": 1
+		},
+		"layer2_filter_size": {
+		    "type": "number",
+		    "min": 2,
+		    "max": 3,
+		    "rounding": 1
+		},
+		"layer2_dropout": {
+		    "type": "number",
+		    "min": 0.1,
+		    "max": 0.5
+		},
+		"fully_connected_size": {
+		    "type": "number",
+		    "min": 64,
+		    "max": 384,
+		    "scaling": "logarithmic",
+		    "rounding": 1
+		},
+		"fully_connected_dropout": {
+		    "type": "number",
+		    "min": 0.25,
+		    "max": 0.75
+		}
+	    }
+	},
+	"function": {
+	    "type": "python_function",
+	    "module": "fashion_mnist",
+	    "name": "measureAccuracy"
+	},
+	"search": {
+	    "method": "atpe",
+	    "iterations": 100
+	}
+}
