@@ -39,7 +39,7 @@ class Optimizer:
         self.config = Configuration(configuration)
 
         self.searchConfig = configuration.get('search', {})
-        jsonschema.validate(self.searchConfig, self.configurationSchema())
+        # jsonschema.validate(self.searchConfig, self.configurationSchema())
 
         self.space = self.config.createHyperparameterSpace()
 
@@ -124,7 +124,7 @@ class Optimizer:
                 skew = scipy.stats.skew(losses)
 
                 # These equations were derived from research, see https://drive.google.com/open?id=1JpQZWM8S-n4NLq4g216mlE0xWehMErOUKtGUf3EUOSU
-                gamma = max(0.25, min(3.0, 0.23 + 0.53 * skew + log10_cardinality * 0.011 + (standard_deviation / median) * -0.3))
+                gamma = max(0.25, min(2.0, 0.23 + 0.53 * skew + log10_cardinality * 0.011 + (standard_deviation / median) * -0.3))
                 secondaryCutoff = max(0, min(1, 0.65 + (standard_deviation / median) * -0.07 + log10_cardinality * 0.02))
             else:
                 gamma = 1.0
@@ -187,7 +187,6 @@ class Optimizer:
                           max_evals=1,
                           trials=trials,
                           rstate=rstate)
-
 
         return params
 
@@ -296,7 +295,7 @@ class Optimizer:
         self.trialNumber += 1
         return sampleFuture
 
-    def runOptimization(self):
+    def runOptimizationThread(self):
         self.thread.start()
 
     def optimizationThread(self):
