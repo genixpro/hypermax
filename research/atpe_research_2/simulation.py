@@ -24,7 +24,7 @@ from hypermax.hyperparameter import Hyperparameter
 from pprint import pprint
 import lightgbm as lgb
 
-default_max_workers = 200
+default_max_workers = 3
 
 class AlgorithmSimulation:
     """ This class represents a simulation of hypothetical machine learning algorithm hyper-parameter spaces.
@@ -82,6 +82,7 @@ class AlgorithmSimulation:
 
         if hasRounding:
             config['space']['rounding'] = 1.0 / cardinality
+            config['rounding'] = 1.0 / cardinality
 
         self.parameters.append(config)
 
@@ -220,45 +221,79 @@ class AlgorithmSimulation:
                     "group": group
                 }
         elif type == 'exponential':
-            invert = random.choice([True, False])
+            invertX = random.choice([True, False])
+            invertY = random.choice([True, False])
 
             height = roundPrecision(random.uniform(0, 0.3))
 
             steepNess = roundPrecision(random.uniform(2, 30) ** 3)
 
-            if invert:
-                return {
-                    "type": "exponential",
-                    "func": "lambda x: min(1.0, max(0, 1.0 - ({0} * math.pow({1}, x) + {2})))".format(1.0/steepNess, steepNess, height),
-                    "param": param,
-                    "group": group
-                }
+            if invertY:
+                if invertX:
+                    return {
+                        "type": "exponential",
+                        "func": "lambda x: min(1.0, max(0, 1.0 - ({0} * math.pow({1}, (1.0 - x)) + {2})))".format(1.0/steepNess, steepNess, height),
+                        "param": param,
+                        "group": group
+                    }
+                else:
+                    return {
+                        "type": "exponential",
+                        "func": "lambda x: min(1.0, max(0, 1.0 - ({0} * math.pow({1}, x) + {2})))".format(1.0/steepNess, steepNess, height),
+                        "param": param,
+                        "group": group
+                    }
             else:
-                return {
-                    "type": "exponential",
-                    "func": "lambda x: min(1.0, max(0, {0} * (math.pow({1}, x) + {2})))".format(1.0/steepNess, steepNess, height),
-                    "param": param,
-                    "group": group
-                }
+                if invertX:
+                    return {
+                        "type": "exponential",
+                        "func": "lambda x: min(1.0, max(0, {0} * (math.pow({1}, (1.0 - x)) + {2})))".format(1.0/steepNess, steepNess, height),
+                        "param": param,
+                        "group": group
+                    }
+                else:
+                    return {
+                        "type": "exponential",
+                        "func": "lambda x: min(1.0, max(0, {0} * (math.pow({1}, x) + {2})))".format(1.0 / steepNess, steepNess, height),
+                        "param": param,
+                        "group": group
+                    }
         elif type == 'logarithmic':
-            invert = random.choice([True, False])
+            invertX = random.choice([True, False])
+            invertY = random.choice([True, False])
 
             steepNess = roundPrecision(random.uniform(3, 30) ** 2)
 
-            if invert:
-                return {
-                    "type": "logarithmic",
-                    "func": "lambda x: min(1.0, max(0, 1.0 - (1.0 - math.log({0}*x+1, {1}))))".format(steepNess-1, steepNess),
-                    "param": param,
-                    "group": group
-                }
+            if invertY:
+                if invertX:
+                    return {
+                        "type": "logarithmic",
+                        "func": "lambda x: min(1.0, max(0, 1.0 - (1.0 - math.log({0}*(1.0-x)+1, {1}))))".format(steepNess-1, steepNess),
+                        "param": param,
+                        "group": group
+                    }
+                else:
+                    return {
+                        "type": "logarithmic",
+                        "func": "lambda x: min(1.0, max(0, 1.0 - (1.0 - math.log({0}*x+1, {1}))))".format(steepNess-1, steepNess),
+                        "param": param,
+                        "group": group
+                    }
             else:
-                return {
-                    "type": "logarithmic",
-                    "func": "lambda x: min(1.0, max(0, (1.0 - math.log({0}*x+1, {1}))))".format(steepNess-1, steepNess),
-                    "param": param,
-                    "group": group
-                }
+                if invertX:
+                    return {
+                        "type": "logarithmic",
+                        "func": "lambda x: min(1.0, max(0, (1.0 - math.log({0}*(1.0-x)+1, {1}))))".format(steepNess-1, steepNess),
+                        "param": param,
+                        "group": group
+                    }
+                else:
+                    return {
+                        "type": "logarithmic",
+                        "func": "lambda x: min(1.0, max(0, (1.0 - math.log({0}*x+1, {1}))))".format(steepNess - 1, steepNess),
+                        "param": param,
+                        "group": group
+                    }
         elif type == 'random':
             # Random
             sizeX = random.randint(4, 9)
@@ -542,7 +577,7 @@ class AlgorithmSimulation:
                 "secondaryCorrelationExponent": 1.0,
                 "secondaryProbabilityMode": {
                     "mode": "fixed",
-                    "probability": 0.5
+                    "probability": 0.0
                 },
                 "secondaryLockingMode": {
                     "locking": "random",
@@ -654,7 +689,10 @@ class AlgorithmSimulation:
                                     if getValue(lockResult, secondary) is not None:
                                         lockedValues[secondary['name']] = getValue(lockResult, secondary)
                                 elif atpeParams['secondaryLockingMode']['locking'] == 'random':
-                                    lockedValues[secondary['name']] = random.uniform(0, 1)
+                                    if 'rounding' in secondary['space']:
+                                        lockedValues[secondary['name']] = random.choice(numpy.linspace(0.0, 1.0, num=(secondary['cardinality']+1)))
+                                    else:
+                                        lockedValues[secondary['name']] = random.uniform(0.0, 1.0)
                         elif atpeParams['secondaryProbabilityMode']['mode'] == 'correlation':
                             probability = max(0, min(1, abs(correlations[secondary['name']]) * atpeParams['secondaryProbabilityMode']['multiplier']))
                             if random.uniform(0, 1) < probability:
@@ -663,7 +701,10 @@ class AlgorithmSimulation:
                                     if getValue(lockResult, secondary) is not None:
                                         lockedValues[secondary['name']] = getValue(lockResult, secondary)
                                 elif atpeParams['secondaryLockingMode']['locking'] == 'random':
-                                    lockedValues[secondary['name']] = random.uniform(0, 1)
+                                    if 'rounding' in secondary['space']:
+                                        lockedValues[secondary['name']] = random.choice(numpy.linspace(0.0, 1.0, num=(secondary['cardinality']+1)))
+                                    else:
+                                        lockedValues[secondary['name']] = random.uniform(0.0, 1.0)
 
                 # Now last step, we filter results prior to sending them into ATPE
                 for resultIndex, result in enumerate(currentResults):
@@ -959,9 +1000,14 @@ class AlgorithmSimulation:
     def computeAllResultStatistics(self, results):
         losses = numpy.array(sorted([result['loss'] for result in results if result['loss'] is not None]))
 
-        percentile10Loss = numpy.percentile(losses, 10)
-        percentile20Loss = numpy.percentile(losses, 20)
-        percentile30Loss = numpy.percentile(losses, 30)
+        if len(set(losses)) > 1:
+            percentile10Loss = numpy.percentile(losses, 10)
+            percentile20Loss = numpy.percentile(losses, 20)
+            percentile30Loss = numpy.percentile(losses, 30)
+        else:
+            percentile10Loss = losses[0]
+            percentile20Loss = losses[0]
+            percentile30Loss = losses[0]
 
         allResults = list(results)
         percentile10Results = [result for result in results if result['loss'] is not None and result['loss'] <= percentile10Loss]
@@ -1116,17 +1162,22 @@ def createContributionChartExample(type=4):
 
     plt.show()
 
+def computeStats(algo):
+    stats = algo.computeBasicStatistics()
+    algo.computeLoss = None
+    return (stats, algo)
 
-def chooseAlgorithmsForTest():
-    parameterSpacesToConsider = 10000
-    numberFinalParameterSpaces = 1000
+def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
+    parameterSpacesToConsider = int(math.ceil(float(total) / shrinkage))
+    numberFinalParameterSpaces = total
 
-    results = []
-
+    resultFutures = []
     for n in range(parameterSpacesToConsider):
         algo = AlgorithmSimulation()
+        resultFutures.append(processExecutor.submit(computeStats, algo))
 
-        stats = algo.computeBasicStatistics()
+    for future in concurrent.futures.as_completed(resultFutures):
+        stats, algo = future.result()
         fileName = 'algo' + str(n) + ".bin"
         stats['fileName'] = fileName
         with open(fileName, "wb") as file:
@@ -1231,13 +1282,13 @@ def chooseAlgorithmsForTest():
 
 
 def testAlgo(algo, algoInfo): # We have to put it in this form so its compatible with processExecutor
-    return (algo.computeOptimizationResults(atpeSearchLength=1000, verbose=True), algoInfo)
+    return (algo.computeOptimizationResults(atpeSearchLength=10, verbose=True), algoInfo)
 
 if __name__ == '__main__':
     with concurrent.futures.ProcessPoolExecutor(max_workers=default_max_workers) as processExecutor:
         resultFutures = []
 
-        chosen = chooseAlgorithmsForTest()
+        chosen = chooseAlgorithmsForTest(total=5, processExecutor=processExecutor)
         for index, algoInfo in enumerate(chosen):
             with open(algoInfo['fileName'], "rb") as file:
                 data = pickle.load(file)
