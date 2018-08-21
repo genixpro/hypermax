@@ -1176,7 +1176,8 @@ def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
         algo = AlgorithmSimulation()
         resultFutures.append(processExecutor.submit(computeStats, algo))
 
-    for future in concurrent.futures.as_completed(resultFutures):
+    results = []
+    for n, future in enumerate(concurrent.futures.as_completed(resultFutures)):
         stats, algo = future.result()
         fileName = 'algo' + str(n) + ".bin"
         stats['fileName'] = fileName
@@ -1281,20 +1282,21 @@ def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
     return chosenSpaces
 
 
-def testAlgo(algo, algoInfo): # We have to put it in this form so its compatible with processExecutor
-    return (algo.computeOptimizationResults(atpeSearchLength=10, verbose=True), algoInfo)
+def testAlgo(algo, algoInfo, verbose): # We have to put it in this form so its compatible with processExecutor
+    return (algo.computeOptimizationResults(atpeSearchLength=100, verbose=verbose), algoInfo)
 
 if __name__ == '__main__':
+    verbose = True
     with concurrent.futures.ProcessPoolExecutor(max_workers=default_max_workers) as processExecutor:
         resultFutures = []
 
-        chosen = chooseAlgorithmsForTest(total=5, processExecutor=processExecutor)
+        chosen = chooseAlgorithmsForTest(total=10, processExecutor=processExecutor)
         for index, algoInfo in enumerate(chosen):
             with open(algoInfo['fileName'], "rb") as file:
                 data = pickle.load(file)
                 algo = data['algo']
 
-            resultFutures.append(processExecutor.submit(testAlgo, algo, algoInfo))
+            resultFutures.append(processExecutor.submit(testAlgo, algo, algoInfo, verbose))
 
         results = []
         for future in concurrent.futures.as_completed(resultFutures):
@@ -1310,4 +1312,7 @@ if __name__ == '__main__':
                 writer = csv.DictWriter(file, fieldnames=results[0])
                 writer.writeheader()
                 writer.writerows(results)
-            pprint(algoResults)
+            if verbose:
+                pprint(algoResults)
+            else:
+                print("Completed Analysis for algorithm ", algoInfo['fileName'])
