@@ -24,7 +24,7 @@ from hypermax.hyperparameter import Hyperparameter
 from pprint import pprint
 import lightgbm as lgb
 
-default_max_workers = 16
+default_max_workers = 15
 
 class AlgorithmSimulation:
     """ This class represents a simulation of hypothetical machine learning algorithm hyper-parameter spaces.
