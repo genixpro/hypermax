@@ -870,6 +870,8 @@ class AlgorithmSimulation:
                 optimizationResults.append(stats)
                 if verbose:
                     pprint(stats)
+                    sys.stdout.flush()
+                    sys.stderr.flush()
 
             # Now we extend each history by using ATPE parameters at various percentiles
             sortedATPEParamResults = sorted(allATPEParamResults, key=lambda result: result['loss'])
@@ -1227,6 +1229,8 @@ def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
             writer.writeheader()
             writer.writerows(results)
         print("Completed algorithm " + str(n))
+        sys.stdout.flush()
+        sys.stderr.flush()
 
     statKeys = [stat for stat in results[0].keys() if stat != 'fileName']
 
@@ -1347,5 +1351,7 @@ if __name__ == '__main__':
                 writer.writerows(results)
             if verbose:
                 pprint(algoResults)
+                sys.stdout.flush()
+                sys.stderr.flush()
             else:
                 print("Completed Analysis for algorithm ", algoInfo['fileName'])
