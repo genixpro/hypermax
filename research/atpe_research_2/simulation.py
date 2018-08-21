@@ -35,6 +35,7 @@ class AlgorithmSimulation:
     def __init__(self):
         self.parameterCount = 0
         self.parameters = []
+        self.log10_cardinality = None
         self.computeScript = None
         self.computeLoss = None
         self.search = None
@@ -779,11 +780,36 @@ class AlgorithmSimulation:
         return best, newResults
 
     def computeCardinality(self):
-        # TODO: THIS NEEDS TO BE UPDATED TO TAKE INTO ACCOUNT CHOICES
+        if self.log10_cardinality: # Return cached computation
+            return self.log10_cardinality
+
         log10_cardinality = 0
         for param in self.parameters:
-            log10_cardinality += math.log10(float(param['cardinality']))
-        return log10_cardinality
+            if param['group'] == 'primary':
+                log10_cardinality += math.log10(float(param['cardinality']))
+
+        group_log10_cardinality = None
+        for group in self.subGroups:
+            subgroup_log10_cardinality = 0
+            for param in group['parameters']:
+                subgroup_log10_cardinality += math.log10(float(param['cardinality']))
+
+            # Combine the log cardinalities in a numerically stable way, taking advantage of logarithm identities.
+            #  Check here to obesrve: https://www.desmos.com/calculator/efkbbftd18 to observe
+            if group_log10_cardinality is None:
+                group_log10_cardinality = subgroup_log10_cardinality
+            elif (group_log10_cardinality - subgroup_log10_cardinality) > 3:
+                group_log10_cardinality = group_log10_cardinality + 1
+            elif (group_log10_cardinality - subgroup_log10_cardinality) < 3:
+                group_log10_cardinality = subgroup_log10_cardinality + 1
+            else:
+                group_log10_cardinality = subgroup_log10_cardinality + math.log10(1 + math.pow(10, group_log10_cardinality - subgroup_log10_cardinality))
+
+        log10_cardinality += group_log10_cardinality
+
+        self.log10_cardinality = log10_cardinality
+
+        return self.log10_cardinality
 
 
     def computeOptimizationResults(self, number_histories=10, trial_lengths=None, atpeSearchLength = 1000, verbose=False):
