@@ -879,7 +879,7 @@ class AlgorithmSimulation:
                 index = int(percentile * float(len(histories)))
                 atpeParamsForExtension = sortedATPEParamResults[index]['atpeParams']
                 # print(atpeParamsForExtension)
-                best, newResults = self.runSearch(currentResults=[], trials=length, atpeParams=atpeParamsForExtension)
+                best, newResults = self.runSearch(currentResults=copy.deepcopy(history), trials=length, atpeParams=atpeParamsForExtension)
                 for result in newResults:
                     history.append(result)
         return optimizationResults
