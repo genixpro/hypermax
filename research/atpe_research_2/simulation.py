@@ -24,7 +24,7 @@ from hypermax.hyperparameter import Hyperparameter
 from pprint import pprint
 import lightgbm as lgb
 
-default_max_workers = 3
+default_max_workers = 16
 
 class AlgorithmSimulation:
     """ This class represents a simulation of hypothetical machine learning algorithm hyper-parameter spaces.
@@ -48,7 +48,7 @@ class AlgorithmSimulation:
         for n in self.contributionTypes:
             self.contributionCounts[n] = 0
 
-        self.noiseFactor = random.uniform(1.01, 1.1)
+        self.noiseFactor = random.uniform(1.01, 1.15)
         self.failRate = random.uniform(0.0, 0.1)
 
         self.createSearchFunction()
@@ -1054,6 +1054,12 @@ class AlgorithmSimulation:
 
         self.addAlgorithmStatistics(statistics)
 
+        # Although we have added lots of protection in the computePartialResultStatistics code, one last hedge against any NaN or infinity values coming up
+        # in our statistics
+        for key in statistics.keys():
+            if math.isnan(statistics[key]) or math.isinf(statistics[key]):
+                statistics[key] = 0
+
         return statistics
 
 
@@ -1283,14 +1289,15 @@ def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
 
 
 def testAlgo(algo, algoInfo, verbose): # We have to put it in this form so its compatible with processExecutor
-    return (algo.computeOptimizationResults(atpeSearchLength=100, verbose=verbose), algoInfo)
+    return (algo.computeOptimizationResults(atpeSearchLength=500, verbose=verbose), algoInfo)
 
 if __name__ == '__main__':
     verbose = True
     with concurrent.futures.ProcessPoolExecutor(max_workers=default_max_workers) as processExecutor:
         resultFutures = []
 
-        chosen = chooseAlgorithmsForTest(total=10, processExecutor=processExecutor)
+        chosen = chooseAlgorithmsForTest(total=1000, processExecutor=processExecutor)
+        random.shuffle(chosen) # Shuffle them for extra randomness
         for index, algoInfo in enumerate(chosen):
             with open(algoInfo['fileName'], "rb") as file:
                 data = pickle.load(file)
