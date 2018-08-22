@@ -812,7 +812,7 @@ class AlgorithmSimulation:
         return self.log10_cardinality
 
 
-    def computeOptimizationResults(self, number_histories=10, trial_lengths=None, atpeSearchLength = 1000, verbose=False):
+    def computeOptimizationResults(self, number_histories=10, trial_lengths=None, atpeSearchLength = 1000, verbose=False, processExecutor=None):
         if trial_lengths is None:
             trial_lengths = [10,10,10,10,10,10,10,10,10,25,25,25,25,25,25]
 
@@ -826,47 +826,20 @@ class AlgorithmSimulation:
             for result in newResults:
                 history.append(result)
 
-        allATPEParamResults = []
-        trialATPEParamResults = []
-        # Create a function which evaluates ATPE parameters, given a history
-        def evaluateATPEParameters(history, length, atpeParameters):
-            # pprint(atpeParameters)
-            # Copy the history, so it doesn't get modified
-            best, _ = self.runSearch(currentResults=copy.deepcopy(history), trials=length, atpeParams=atpeParameters)
-            data = {
-                'loss': best['loss'],
-                'atpeParams': atpeParameters
-            }
-            allATPEParamResults.append(data)
-            trialATPEParamResults.append(data)
-            return best['loss']
-
         optimizationResults = []
 
         # Loop for each of our trial lengths
         for length in trial_lengths:
             # Now for each history, find the optimal ATPE parameters.
-            allATPEParamResults = []
+            allATPEParamResultFutures = []
             for historyIndex, history in enumerate(histories):
-                # Compute stats
-                stats = self.computeAllResultStatistics(history)
+                self.computeLoss = None # Delete the computeLoss function - it can't be pickled. But it can just be recreated from the computeScript
+                allATPEParamResultFutures.append(processExecutor.submit(computeBestATPEParamsAtHistory, self, history, historyIndex, atpeSearchLength, length))
 
-                trialATPEParamResults = []
-                dict(hyperopt.fmin(fn=functools.partial(evaluateATPEParameters, history, length),
-                              space=self.getATPEHyperoptSpace(),
-                              algo=functools.partial(hyperopt.tpe.suggest, n_startup_jobs=10, gamma=1.0, n_EI_candidates=4),
-                              max_evals=atpeSearchLength,
-                              rstate=numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))))
-
-                best = min(trialATPEParamResults, key=lambda result: result['loss'])
-                flatAtpeParams = self.getFlatATPEParameters(best['atpeParams'])
-                for param in flatAtpeParams.keys():
-                    stats[param] = flatAtpeParams[param]
-
-                stats['trial'] = len(history)
-                stats['log10_trial'] = math.log10(len(history))
-                stats['history'] = historyIndex
-                stats['loss'] = best['loss']
+            allATPEParamResults = []
+            for future in concurrent.futures.as_completed(allATPEParamResultFutures):
+                stats, trialATPEParamResults = future.result()
+                allATPEParamResults = allATPEParamResults + trialATPEParamResults
                 optimizationResults.append(stats)
                 if verbose:
                     pprint(stats)
@@ -1124,6 +1097,42 @@ class AlgorithmSimulation:
         return averages
 
 
+ # This must be outside the above class in order to be compatible with concurrent.futures.ProcessExecutor
+def computeBestATPEParamsAtHistory(algorithm, history, historyIndex, atpeSearchLength, length):
+    # Compute stats
+    stats = algorithm.computeAllResultStatistics(history)
+
+    trialATPEParamResults = []
+
+    # Create a function which evaluates ATPE parameters, given a history
+    def evaluateATPEParameters(history, length, atpeParameters):
+        # pprint(atpeParameters)
+        # Copy the history, so it doesn't get modified
+        best, _ = algorithm.runSearch(currentResults=copy.deepcopy(history), trials=length, atpeParams=atpeParameters)
+        data = {
+            'loss': best['loss'],
+            'atpeParams': atpeParameters
+        }
+        trialATPEParamResults.append(data)
+        return best['loss']
+
+    dict(hyperopt.fmin(fn=functools.partial(evaluateATPEParameters, history, length),
+                       space=algorithm.getATPEHyperoptSpace(),
+                       algo=functools.partial(hyperopt.tpe.suggest, n_startup_jobs=10, gamma=1.0, n_EI_candidates=4),
+                       max_evals=atpeSearchLength,
+                       rstate=numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))))
+
+    best = min(trialATPEParamResults, key=lambda result: result['loss'])
+    flatAtpeParams = algorithm.getFlatATPEParameters(best['atpeParams'])
+    for param in flatAtpeParams.keys():
+        stats[param] = flatAtpeParams[param]
+
+    stats['trial'] = len(history)
+    stats['log10_trial'] = math.log10(len(history))
+    stats['history'] = historyIndex
+    stats['loss'] = best['loss']
+    return stats, trialATPEParamResults
+
 
 def createInteractionChartExample():
     algo = AlgorithmSimulation()
@@ -1318,40 +1327,44 @@ def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
     return chosenSpaces
 
 
-def testAlgo(algo, algoInfo, verbose): # We have to put it in this form so its compatible with processExecutor
-    return (algo.computeOptimizationResults(atpeSearchLength=500, verbose=verbose), algoInfo)
+def testAlgo(algo, algoInfo, processExecutor, verbose): # We have to put it in this form so its compatible with processExecutor
+    return (algo.computeOptimizationResults(atpeSearchLength=500, verbose=verbose, processExecutor=processExecutor), algoInfo)
 
 if __name__ == '__main__':
     verbose = True
-    with concurrent.futures.ProcessPoolExecutor(max_workers=default_max_workers) as processExecutor:
-        resultFutures = []
 
-        chosen = chooseAlgorithmsForTest(total=1000, processExecutor=processExecutor)
-        random.shuffle(chosen) # Shuffle them for extra randomness
-        for index, algoInfo in enumerate(chosen):
-            with open(algoInfo['fileName'], "rb") as file:
-                data = pickle.load(file)
-                algo = data['algo']
+    algorithmsAtOnce = int(math.ceil(float(default_max_workers) / 10.0))
 
-            resultFutures.append(processExecutor.submit(testAlgo, algo, algoInfo, verbose))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=algorithmsAtOnce) as threadExecutor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=default_max_workers) as processExecutor:
+            resultFutures = []
 
-        results = []
-        for future in concurrent.futures.as_completed(resultFutures):
-            futureResult = future.result()
-            algoInfo = futureResult[1]
-            algoResults = futureResult[0]
+            chosen = chooseAlgorithmsForTest(total=2, processExecutor=processExecutor)
+            random.shuffle(chosen) # Shuffle them for extra randomness
+            for index, algoInfo in enumerate(chosen):
+                with open(algoInfo['fileName'], "rb") as file:
+                    data = pickle.load(file)
+                    algo = data['algo']
 
-            for result in algoResults:
-                result['algorithm'] = algoInfo['fileName']
-                results.append(result)
+                resultFutures.append(threadExecutor.submit(testAlgo, algo, algoInfo, processExecutor, verbose))
 
-            with open('results.csv', 'wt') as file:
-                writer = csv.DictWriter(file, fieldnames=results[0])
-                writer.writeheader()
-                writer.writerows(results)
-            if verbose:
-                pprint(algoResults)
-                sys.stdout.flush()
-                sys.stderr.flush()
-            else:
-                print("Completed Analysis for algorithm ", algoInfo['fileName'])
+            results = []
+            for future in concurrent.futures.as_completed(resultFutures):
+                futureResult = future.result()
+                algoInfo = futureResult[1]
+                algoResults = futureResult[0]
+
+                for result in algoResults:
+                    result['algorithm'] = algoInfo['fileName']
+                    results.append(result)
+
+                with open('results.csv', 'wt') as file:
+                    writer = csv.DictWriter(file, fieldnames=results[0])
+                    writer.writeheader()
+                    writer.writerows(results)
+                if verbose:
+                    pprint(algoResults)
+                    sys.stdout.flush()
+                    sys.stderr.flush()
+                else:
+                    print("Completed Analysis for algorithm ", algoInfo['fileName'])
