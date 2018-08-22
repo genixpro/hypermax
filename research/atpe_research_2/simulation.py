@@ -22,9 +22,10 @@ import sklearn.cluster
 from hypermax.utils import roundPrecision
 from hypermax.hyperparameter import Hyperparameter
 from pprint import pprint
+import psutil
 import lightgbm as lgb
 
-default_max_workers = 15
+default_max_workers = psutil.cpu_count()-1
 
 class AlgorithmSimulation:
     """ This class represents a simulation of hypothetical machine learning algorithm hyper-parameter spaces.
@@ -1328,7 +1329,7 @@ def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
 
 
 def testAlgo(algo, algoInfo, processExecutor, verbose): # We have to put it in this form so its compatible with processExecutor
-    return (algo.computeOptimizationResults(atpeSearchLength=500, verbose=verbose, processExecutor=processExecutor), algoInfo)
+    return (algo.computeOptimizationResults(atpeSearchLength=150, verbose=verbose, processExecutor=processExecutor), algoInfo)
 
 if __name__ == '__main__':
     verbose = True
@@ -1339,7 +1340,7 @@ if __name__ == '__main__':
         with concurrent.futures.ProcessPoolExecutor(max_workers=default_max_workers) as processExecutor:
             resultFutures = []
 
-            chosen = chooseAlgorithmsForTest(total=2, processExecutor=processExecutor)
+            chosen = chooseAlgorithmsForTest(total=1000, processExecutor=processExecutor)
             random.shuffle(chosen) # Shuffle them for extra randomness
             for index, algoInfo in enumerate(chosen):
                 with open(algoInfo['fileName'], "rb") as file:
