@@ -811,6 +811,43 @@ class AlgorithmSimulation:
 
         return self.log10_cardinality
 
+    def computeBestATPEParamsAtHistory(self, history, historyIndex, atpeSearchLength, length):
+        start = datetime.datetime.now()
+
+        # Compute stats
+        stats = self.computeAllResultStatistics(history)
+
+        trialATPEParamResults = []
+
+        # Create a function which evaluates ATPE parameters, given a history
+        def evaluateATPEParameters(history, length, atpeParameters):
+            # pprint(atpeParameters)
+            # Copy the history, so it doesn't get modified
+            best, _ = self.runSearch(currentResults=copy.deepcopy(history), trials=length, atpeParams=atpeParameters)
+            data = {
+                'loss': best['loss'],
+                'atpeParams': atpeParameters
+            }
+            trialATPEParamResults.append(data)
+            return best['loss']
+
+        dict(hyperopt.fmin(fn=functools.partial(evaluateATPEParameters, history, length),
+                           space=self.getATPEHyperoptSpace(),
+                           algo=functools.partial(hyperopt.tpe.suggest, n_startup_jobs=10, gamma=1.0, n_EI_candidates=4),
+                           max_evals=atpeSearchLength,
+                           rstate=numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))))
+
+        best = min(trialATPEParamResults, key=lambda result: result['loss'])
+        flatAtpeParams = self.getFlatATPEParameters(best['atpeParams'])
+        for param in flatAtpeParams.keys():
+            stats[param] = flatAtpeParams[param]
+
+        stats['trial'] = len(history)
+        stats['log10_trial'] = math.log10(len(history))
+        stats['history'] = historyIndex
+        stats['loss'] = best['loss']
+        stats['time'] = (datetime.datetime.now() - start).total_seconds()
+        return stats, trialATPEParamResults
 
     def computeOptimizationResults(self, number_histories=10, trial_lengths=None, atpeSearchLength = 1000, verbose=False, processExecutor=None):
         if trial_lengths is None:
@@ -834,7 +871,7 @@ class AlgorithmSimulation:
             allATPEParamResultFutures = []
             for historyIndex, history in enumerate(histories):
                 self.computeLoss = None # Delete the computeLoss function - it can't be pickled. But it can just be recreated from the computeScript
-                allATPEParamResultFutures.append(processExecutor.submit(computeBestATPEParamsAtHistory, self, history, historyIndex, atpeSearchLength, length))
+                allATPEParamResultFutures.append(processExecutor.submit(self.computeBestATPEParamsAtHistory, history, historyIndex, atpeSearchLength, length))
 
             allATPEParamResults = []
             for future in concurrent.futures.as_completed(allATPEParamResultFutures):
@@ -1095,43 +1132,6 @@ class AlgorithmSimulation:
         averages['secondaryCutoff'] = secondaryCutoff
         averages['independentModellingRate'] = independentModellingRate
         return averages
-
-
- # This must be outside the above class in order to be compatible with concurrent.futures.ProcessExecutor
-def computeBestATPEParamsAtHistory(algorithm, history, historyIndex, atpeSearchLength, length):
-    # Compute stats
-    stats = algorithm.computeAllResultStatistics(history)
-
-    trialATPEParamResults = []
-
-    # Create a function which evaluates ATPE parameters, given a history
-    def evaluateATPEParameters(history, length, atpeParameters):
-        # pprint(atpeParameters)
-        # Copy the history, so it doesn't get modified
-        best, _ = algorithm.runSearch(currentResults=copy.deepcopy(history), trials=length, atpeParams=atpeParameters)
-        data = {
-            'loss': best['loss'],
-            'atpeParams': atpeParameters
-        }
-        trialATPEParamResults.append(data)
-        return best['loss']
-
-    dict(hyperopt.fmin(fn=functools.partial(evaluateATPEParameters, history, length),
-                       space=algorithm.getATPEHyperoptSpace(),
-                       algo=functools.partial(hyperopt.tpe.suggest, n_startup_jobs=10, gamma=1.0, n_EI_candidates=4),
-                       max_evals=atpeSearchLength,
-                       rstate=numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))))
-
-    best = min(trialATPEParamResults, key=lambda result: result['loss'])
-    flatAtpeParams = algorithm.getFlatATPEParameters(best['atpeParams'])
-    for param in flatAtpeParams.keys():
-        stats[param] = flatAtpeParams[param]
-
-    stats['trial'] = len(history)
-    stats['log10_trial'] = math.log10(len(history))
-    stats['history'] = historyIndex
-    stats['loss'] = best['loss']
-    return stats, trialATPEParamResults
 
 
 def createInteractionChartExample():
