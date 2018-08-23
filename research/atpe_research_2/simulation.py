@@ -1103,7 +1103,7 @@ class AlgorithmSimulation:
 
 
     def computeBasicStatistics(self):
-        best, results = self.runSearch(currentResults=[], trials=100, atpeParams=None) # Use default atpe params
+        best, results = self.runSearch(currentResults=[], trials=250, atpeParams=None) # Use default atpe params
         return self.computeAllResultStatistics(results)
 
 
