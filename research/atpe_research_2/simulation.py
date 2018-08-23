@@ -1328,11 +1328,22 @@ def chooseAlgorithmsForTest(total, shrinkage=0.2, processExecutor=None):
     return chosenSpaces
 
 
-def testAlgo(algo, algoInfo, processExecutor, verbose): # We have to put it in this form so its compatible with processExecutor
-    return (algo.computeOptimizationResults(number_histories=5, atpeSearchLength=100, verbose=verbose, processExecutor=processExecutor), algoInfo)
+def testAlgo(algo, algoInfo, processExecutor, trialLengths, verbose): # We have to put it in this form so its compatible with processExecutor
+    return (algo.computeOptimizationResults(trial_lengths=trialLengths, number_histories=5, atpeSearchLength=100, verbose=verbose, processExecutor=processExecutor), algoInfo)
 
 if __name__ == '__main__':
     verbose = True
+
+    trialsLength = 500
+    ratio = 1.15
+    currentTrialLength = 5.0
+    totalTrials = 5
+    trialLengths = [5]
+    # Construct a series of trial lengths until we get to our target, as a geometric sequence
+    while totalTrials < trialsLength:
+        currentTrialLength *= ratio
+        totalTrials += int(currentTrialLength)
+        trialLengths.append([int(currentTrialLength)])
 
     algorithmsAtOnce = int(math.ceil(float(default_max_workers) / 5.0))
 
@@ -1347,7 +1358,7 @@ if __name__ == '__main__':
                     data = pickle.load(file)
                     algo = data['algo']
 
-                resultFutures.append(threadExecutor.submit(testAlgo, algo, algoInfo, processExecutor, verbose))
+                resultFutures.append(threadExecutor.submit(testAlgo, algo, algoInfo, processExecutor,trialLengths, verbose))
 
             results = []
             for future in concurrent.futures.as_completed(resultFutures):
