@@ -25,7 +25,7 @@ from pprint import pprint
 import psutil
 import lightgbm as lgb
 
-default_max_workers = int(psutil.cpu_count()*1.1)
+default_max_workers = int(math.ceil(psutil.cpu_count()*1.15))
 
 class AlgorithmSimulation:
     """ This class represents a simulation of hypothetical machine learning algorithm hyper-parameter spaces.
@@ -185,7 +185,7 @@ class AlgorithmSimulation:
 
     def createHyperParameterContribution(self, param, group, type=None):
         if type is None:
-            type = random.choice(self.contributionTypes + ['linear']) # Increase weight of linear interactions
+            type = random.choice(self.contributionTypes + ['peakvalley', 'exponential']) # Increase weight of peakvalley and exponential contributions, which are the most common observed
 
         self.contributionCounts[type] += 1
 
@@ -310,7 +310,7 @@ class AlgorithmSimulation:
 
 
     def createSearchFunction(self):
-        primaryParameters = [self.createHyperParameter(group='primary') for n in range(random.randint(3, 10))]
+        primaryParameters = [self.createHyperParameter(group='primary') for n in range(random.randint(1, 8))]
 
         parameterSubGroups = random.randint(1, 3)
         probabilityOfInteraction = random.uniform(0.1, 0.5)
@@ -331,7 +331,7 @@ class AlgorithmSimulation:
         subGroups = []
         for n in range(parameterSubGroups):
             group = 'group' + str(n+1)
-            subGroupParameters = [self.createHyperParameter(group=group) for n in range(random.randint(2, 8))]
+            subGroupParameters = [self.createHyperParameter(group=group) for n in range(random.randint(1, 5))]
             subGroupContributions = [self.createHyperParameterContribution(parameter, group=group) for parameter in subGroupParameters]
 
             parametersForInteraction = primaryParameters + subGroupParameters
@@ -1328,24 +1328,26 @@ def chooseAlgorithmsForTest(total, shrinkage=0.2, processExecutor=None):
     return chosenSpaces
 
 
-def testAlgo(algo, algoInfo, processExecutor, trialLengths, verbose): # We have to put it in this form so its compatible with processExecutor
-    return (algo.computeOptimizationResults(trial_lengths=trialLengths, number_histories=3, atpeSearchLength=100, verbose=verbose, processExecutor=processExecutor), algoInfo)
+def testAlgo(algo, algoInfo, processExecutor, trialLengths, number_histories, verbose): # We have to put it in this form so its compatible with processExecutor
+    return (algo.computeOptimizationResults(trial_lengths=trialLengths, number_histories=number_histories, atpeSearchLength=100, verbose=verbose, processExecutor=processExecutor), algoInfo)
 
 if __name__ == '__main__':
     verbose = True
 
-    trialsLength = 500
-    ratio = 1.15
-    currentTrialLength = 5.0
-    totalTrials = 5
-    trialLengths = [5]
+    trialsLength = 400
+    ratio = 1.10
+    currentTrialLength = 7.0
+    totalTrials = 7
+    trialLengths = [7]
     # Construct a series of trial lengths until we get to our target, as a geometric sequence
     while totalTrials < trialsLength:
         currentTrialLength *= ratio
         totalTrials += int(currentTrialLength)
         trialLengths.append([int(currentTrialLength)])
 
-    algorithmsAtOnce = int(math.ceil(float(default_max_workers) / 5.0))
+    number_histories = 3
+
+    algorithmsAtOnce = int(math.ceil(float(default_max_workers) / number_histories)) + 1
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=algorithmsAtOnce) as threadExecutor:
         with concurrent.futures.ProcessPoolExecutor(max_workers=default_max_workers) as processExecutor:
@@ -1358,7 +1360,7 @@ if __name__ == '__main__':
                     data = pickle.load(file)
                     algo = data['algo']
 
-                resultFutures.append(threadExecutor.submit(testAlgo, algo, algoInfo, processExecutor,trialLengths, verbose))
+                resultFutures.append(threadExecutor.submit(testAlgo, algo, algoInfo, processExecutor,trialLengths, number_histories, verbose))
 
             results = []
             for future in concurrent.futures.as_completed(resultFutures):
