@@ -25,7 +25,7 @@ from pprint import pprint
 import psutil
 import lightgbm as lgb
 
-default_max_workers = psutil.cpu_count()-1
+default_max_workers = int(psutil.cpu_count()*1.1)
 
 class AlgorithmSimulation:
     """ This class represents a simulation of hypothetical machine learning algorithm hyper-parameter spaces.
@@ -888,7 +888,7 @@ class AlgorithmSimulation:
             sortedATPEParamResults = sorted(allATPEParamResults, key=lambda result: result['loss'])
 
             for historyIndex, history in enumerate(histories):
-                percentile = (float(historyIndex) / float(len(histories))) * 0.8
+                percentile = (float(historyIndex+1) / float(len(histories))) * 0.5
                 index = int(percentile * float(len(histories)))
                 atpeParamsForExtension = sortedATPEParamResults[index]['atpeParams']
                 # print(atpeParamsForExtension)
@@ -1329,12 +1329,12 @@ def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
 
 
 def testAlgo(algo, algoInfo, processExecutor, verbose): # We have to put it in this form so its compatible with processExecutor
-    return (algo.computeOptimizationResults(atpeSearchLength=150, verbose=verbose, processExecutor=processExecutor), algoInfo)
+    return (algo.computeOptimizationResults(number_histories=5, atpeSearchLength=100, verbose=verbose, processExecutor=processExecutor), algoInfo)
 
 if __name__ == '__main__':
     verbose = True
 
-    algorithmsAtOnce = int(math.ceil(float(default_max_workers) / 10.0))
+    algorithmsAtOnce = int(math.ceil(float(default_max_workers) / 5.0))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=algorithmsAtOnce) as threadExecutor:
         with concurrent.futures.ProcessPoolExecutor(max_workers=default_max_workers) as processExecutor:
