@@ -50,7 +50,7 @@ class AlgorithmSimulation:
         for n in self.contributionTypes:
             self.contributionCounts[n] = 0
 
-        self.noiseFactor = random.uniform(1.01, 1.15)
+        self.noiseFactor = random.uniform(1.01, 1.25)
         self.failRate = random.uniform(0.0, 0.1)
 
         self.createSearchFunction()
@@ -92,7 +92,7 @@ class AlgorithmSimulation:
 
     def createHyperParameterInteraction(self, param1, param2, group, type=None):
         if type is None:
-            type = random.choice(self.interactionTypes + ['random']) # Increase weight of random interactions
+            type = random.choice(self.interactionTypes + ['peakvalley']) # Increase weight of peakvalley style interactions
 
         self.interactionCounts[type] += 1
 
@@ -185,7 +185,7 @@ class AlgorithmSimulation:
 
     def createHyperParameterContribution(self, param, group, type=None):
         if type is None:
-            type = random.choice(self.contributionTypes + ['random']) # Increase weight of random interactions
+            type = random.choice(self.contributionTypes + ['linear']) # Increase weight of linear interactions
 
         self.contributionCounts[type] += 1
 
@@ -1329,7 +1329,7 @@ def chooseAlgorithmsForTest(total, shrinkage=0.2, processExecutor=None):
 
 
 def testAlgo(algo, algoInfo, processExecutor, trialLengths, verbose): # We have to put it in this form so its compatible with processExecutor
-    return (algo.computeOptimizationResults(trial_lengths=trialLengths, number_histories=5, atpeSearchLength=100, verbose=verbose, processExecutor=processExecutor), algoInfo)
+    return (algo.computeOptimizationResults(trial_lengths=trialLengths, number_histories=3, atpeSearchLength=100, verbose=verbose, processExecutor=processExecutor), algoInfo)
 
 if __name__ == '__main__':
     verbose = True
