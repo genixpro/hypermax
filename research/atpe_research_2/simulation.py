@@ -1211,7 +1211,7 @@ def computeStats(algo):
     algo.computeLoss = None
     return (stats, algo)
 
-def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
+def chooseAlgorithmsForTest(total, shrinkage=0.2, processExecutor=None):
     parameterSpacesToConsider = int(math.ceil(float(total) / shrinkage))
     numberFinalParameterSpaces = total
 
@@ -1340,7 +1340,7 @@ if __name__ == '__main__':
         with concurrent.futures.ProcessPoolExecutor(max_workers=default_max_workers) as processExecutor:
             resultFutures = []
 
-            chosen = chooseAlgorithmsForTest(total=1000, processExecutor=processExecutor)
+            chosen = chooseAlgorithmsForTest(total=250, processExecutor=processExecutor)
             random.shuffle(chosen) # Shuffle them for extra randomness
             for index, algoInfo in enumerate(chosen):
                 with open(algoInfo['fileName'], "rb") as file:
