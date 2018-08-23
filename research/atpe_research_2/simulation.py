@@ -1107,34 +1107,6 @@ class AlgorithmSimulation:
         return self.computeAllResultStatistics(results)
 
 
-    def run(self, gamma, processExecutor, lossFunction=None, initializationRounds=None, nEICandidates=None, priorWeight=None, secondaryCutoff=None, independentModellingRate=None):
-        if self.computeScript is None:
-            self.createSearchFunction()
-
-        lossFutures = []
-        # Run TPE a bunch of times with different lengths of trials
-        for trialsLength in [100, 250]:
-            for n in range(10):
-                lossFutures.append(processExecutor.submit(runSearch, trialsLength, self.computeScript, gamma, self.search['hyperparameters'], lossFunction, initializationRounds, nEICandidates, priorWeight, secondaryCutoff, independentModellingRate))
-
-        results = [future.result() for future in lossFutures]
-
-        averages = {}
-
-        # Compute the mean value for each of the statistics
-        for stat in results[0].keys():
-            values = [result[stat] for result in results]
-            averages[stat] = numpy.mean(values)
-        averages['gamma'] = gamma
-        averages['lossFunction'] = lossFunction
-        averages['initializationRounds'] = initializationRounds
-        averages['nEICandidates'] = nEICandidates
-        averages['priorWeight'] = priorWeight
-        averages['secondaryCutoff'] = secondaryCutoff
-        averages['independentModellingRate'] = independentModellingRate
-        return averages
-
-
 def createInteractionChartExample():
     algo = AlgorithmSimulation()
     param1 = algo.createHyperParameter()
