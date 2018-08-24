@@ -1183,7 +1183,7 @@ def computeStats(algo):
     algo.computeLoss = None
     return (stats, algo)
 
-def chooseAlgorithmsForTest(total, shrinkage=0.2, processExecutor=None):
+def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
     parameterSpacesToConsider = int(math.ceil(float(total) / shrinkage))
     numberFinalParameterSpaces = total
 
@@ -1309,18 +1309,18 @@ def testAlgo(algo, algoInfo, processExecutor, trialLengths, number_histories, ve
 if __name__ == '__main__':
     verbose = True
 
-    trialsLength = 400
-    ratio = 1.10
-    currentTrialLength = 7.0
-    totalTrials = 7
-    trialLengths = [7]
+    trialsLength = 800
+    ratio = 1.13
+    currentTrialLength = 5.0
+    totalTrials = 5
+    trialLengths = [5]
     # Construct a series of trial lengths until we get to our target, as a geometric sequence
     while totalTrials < trialsLength:
         currentTrialLength *= ratio
         totalTrials += int(currentTrialLength)
         trialLengths.append([int(currentTrialLength)])
 
-    number_histories = 3
+    number_histories = 5
 
     algorithmsAtOnce = int(math.ceil(float(default_max_workers) / number_histories)) + 1
 
