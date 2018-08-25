@@ -2,6 +2,7 @@ import os.path
 import json
 import traceback
 import csv
+import copy
 import sklearn.preprocessing
 import random
 import pickle
@@ -275,13 +276,15 @@ def getDeduplicatedResults():
 
     duplicates = []
     additionals = []
+    csvResultsByRunCloned = copy.deepcopy(csvResultsByRun)
     for run in logResultsByRun.keys():
         runDuplicates = []
         runAdditionals = []
+        print(run, 'total', len(logResultsByRun[run]))
         for result in logResultsByRun[run]:
             found = False
-            if run in csvResultsByRun:
-                for result2 in csvResultsByRun[run]:
+            if run in csvResultsByRunCloned:
+                for result2 in csvResultsByRunCloned[run]:
                     same = True
                     for key in result.keys():
                         if result[key] is not None and result2[key] is not None:
@@ -295,12 +298,13 @@ def getDeduplicatedResults():
                     if same:
                         found = True
                         runDuplicates.append(result)
-                        # print(run, 'dupes', len(runDuplicates))
+                        csvResultsByRunCloned[run].remove(result2)
                         break
                 if not found:
                     runAdditionals.append(result)
-                    # print(run, 'adds', len(runAdditionals))
 
+        print(run, 'dupes', len(runDuplicates))
+        print(run, 'adds', len(runAdditionals))
         duplicates = duplicates + runDuplicates
         additionals = additionals + runAdditionals
 
