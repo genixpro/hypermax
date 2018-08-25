@@ -1251,7 +1251,7 @@ def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
                 print(stat)
 
             if 'correlation' in stat:
-                vectors[:, index] *= (3 * base)
+                base = base * 3
 
             if 'skew' in stat or 'kurtosis' in stat:
                 vectors[:, index] *= (3 * base)
