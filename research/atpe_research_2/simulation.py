@@ -1223,7 +1223,7 @@ def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
         vectors.append(vector)
 
     # Normalize
-    vectors = sklearn.preprocessing.scale(vectors)
+    vectors = sklearn.preprocessing.scale(vectors, axis=1)
 
     # Add weights
     for index, stat in enumerate(statKeys):
@@ -1309,7 +1309,7 @@ def testAlgo(algo, algoInfo, processExecutor, trialLengths, number_histories, ve
 if __name__ == '__main__':
     verbose = True
 
-    trialsLength = 800
+    trialsLength = 500
     ratio = 1.13
     currentTrialLength = 5.0
     totalTrials = 5
@@ -1318,7 +1318,7 @@ if __name__ == '__main__':
     while totalTrials < trialsLength:
         currentTrialLength *= ratio
         totalTrials += int(currentTrialLength)
-        trialLengths.append([int(currentTrialLength)])
+        trialLengths.append(int(currentTrialLength))
 
     number_histories = 5
 
