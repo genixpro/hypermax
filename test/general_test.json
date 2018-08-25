@@ -79,6 +79,6 @@
       "iterations": 1000
   },
   "ui": {
-    "enabled": false
+    "enabled": true
   }
 }

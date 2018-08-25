@@ -20,7 +20,7 @@ setup(
         'hypermax'
     ],
     package_data={
-        'hypermax': ['test'],
+        'hypermax': ['test', 'atpe_models/*.txt', 'atpe_models/*.json'],
     },
     install_requires=[
         'hyperopt',

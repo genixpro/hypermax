@@ -10,18 +10,22 @@ import threading
 import queue
 import copy
 import tempfile
+import sklearn
 import random
 import subprocess
 import concurrent.futures
+import tempfile
 import functools
 import lightgbm
 import math
 import atexit
 import jsonschema
 import scipy.stats
+import pkg_resources
 from hypermax.execution import Execution
 from hypermax.hyperparameter import Hyperparameter
 from hypermax.results_analyzer import ResultsAnalyzer
+
 
 from hypermax.configuration import Configuration
 
@@ -52,13 +56,29 @@ class Optimizer:
         'secondaryTopLockingPercentile',
     ]
 
+    atpeParameterCascadeOrdering = [
+        'resultFilteringMode',
+        'secondaryLockingMode',
+        'secondaryProbabilityMode',
+        'resultFilteringAgeMultiplier',
+        'resultFilteringLossRankMultiplier',
+        'resultFilteringRandomProbability',
+        'secondaryTopLockingPercentile',
+        'secondaryCorrelationExponent',
+        'secondaryCorrelationMultiplier',
+        'secondaryFixedProbability',
+        'secondaryCutoff',
+        'gamma',
+        'nEICandidates'
+    ]
+
     atpeParameterValues = {
         'resultFilteringMode': ['age', 'loss_rank', 'none', 'random'],
         'secondaryLockingMode': ['random', 'top'],
         'secondaryProbabilityMode': ['correlation', 'fixed']
     }
 
-    featureKeys = [
+    atpeModelFeatureKeys = [
         'all_correlation_best_percentile25_ratio',
         'all_correlation_best_percentile50_ratio',
         'all_correlation_best_percentile75_ratio',
@@ -76,8 +96,6 @@ class Optimizer:
         'all_loss_stddev_best_ratio',
         'all_loss_stddev_median_ratio',
         'log10_cardinality',
-        'log10_trial',
-        'num_parameters',
         'recent_10_correlation_best_percentile25_ratio',
         'recent_10_correlation_best_percentile50_ratio',
         'recent_10_correlation_best_percentile75_ratio',
@@ -205,16 +223,29 @@ class Optimizer:
         self.occupiedWorkers = set()
         self.trialNumber = 0
 
+        scalingModelData = json.loads(pkg_resources.resource_string(__name__, "atpe_models/scaling_model.json"))
+        self.featureScalingModels = {}
+        for key in self.atpeModelFeatureKeys:
+            self.featureScalingModels[key] = sklearn.preprocessing.StandardScaler()
+            self.featureScalingModels[key].scale_ = numpy.array(scalingModelData[key]['scales'])
+            self.featureScalingModels[key].mean_ = numpy.array(scalingModelData[key]['means'])
+            self.featureScalingModels[key].var_ = numpy.array(scalingModelData[key]['variances'])
+
         self.parameterModels = {}
         self.parameterModelConfigurations = {}
         for param in self.atpeParameters:
-            self.parameterModels[param] = lightgbm.Booster(model_file='models/model-' + param + '.txt')
+            modelData = pkg_resources.resource_string(__name__, "atpe_models/model-" + param + '.txt')
+            with tempfile.NamedTemporaryFile() as file:
+                file.write(modelData)
+                self.parameterModels[param] = lightgbm.Booster(model_file=file.name)
+
             if param not in self.atpeParameterValues:
-                with open('models/model-' + param + "-configuration.json", 'rt') as file:
-                    data = json.load(file)
-                    self.parameterModelConfigurations[param] = data
+                configString = pkg_resources.resource_string(__name__, "atpe_models/model-" + param + '-configuration.json')
+                data = json.loads(configString)
+                self.parameterModelConfigurations[param] = data
 
         self.lastATPEParameters = None
+        self.atpeParamDetails = None
 
     def __del__(self):
         if self.threadExecutor:
@@ -268,6 +299,7 @@ class Optimizer:
             initializationRounds = 10
 
             atpeParams = {}
+            atpeParamDetails = {}
             if len(set(result['loss'] for result in self.results)) < initializationRounds:
                 atpeParams = {
                     'gamma': 1.0,
@@ -291,21 +323,78 @@ class Optimizer:
                 stats['num_parameters'] = len(parameters)
                 stats['log10_cardinality'] = Hyperparameter(self.config.data['hyperparameters']).getLog10Cardinality()
                 stats['log10_trial'] = math.log10(len(self.results))
-                vector = []
+                baseVector = []
 
-                for feature in self.featureKeys:
-                    vector.append(stats[feature])
+                for feature in self.atpeModelFeatureKeys:
+                    scalingModel = self.featureScalingModels[feature]
+                    transformed = scalingModel.transform([[stats[feature]]])[0][0]
+                    baseVector.append(transformed)
 
-                for param in self.atpeParameters:
-                    value = self.parameterModels[param].predict([vector])[0]
-                    if param in self.atpeParameterValues:
+                baseVector = numpy.array([baseVector])
+
+                for atpeParamIndex, atpeParameter in enumerate(self.atpeParameterCascadeOrdering):
+                    vector = copy.copy(baseVector)[0].tolist()
+                    atpeParamFeatures = self.atpeParameterCascadeOrdering[:atpeParamIndex]
+                    for atpeParamFeature in atpeParamFeatures:
+                        # We have to insert a special value of -3 for any conditional parameters.
+                        if atpeParamFeature == 'resultFilteringAgeMultiplier' and atpeParams['resultFilteringMode'] != 'age':
+                            vector.append(-3) # This is the default value inserted when parameters aren't relevant
+                        elif atpeParamFeature == 'resultFilteringLossRankMultiplier' and atpeParams['resultFilteringMode'] != 'loss_rank':
+                            vector.append(-3) # This is the default value inserted when parameters aren't relevant
+                        elif atpeParamFeature == 'resultFilteringRandomProbability' and atpeParams['resultFilteringMode'] != 'random':
+                            vector.append(-3) # This is the default value inserted when parameters aren't relevant
+                        elif atpeParamFeature == 'secondaryCorrelationMultiplier' and atpeParams['secondaryProbabilityMode'] != 'correlation':
+                            vector.append(-3) # This is the default value inserted when parameters aren't relevant
+                        elif atpeParamFeature == 'secondaryFixedProbability' and atpeParams['secondaryProbabilityMode'] != 'fixed':
+                            vector.append(-3) # This is the default value inserted when parameters aren't relevant
+                        elif atpeParamFeature == 'secondaryTopLockingPercentile' and atpeParams['secondaryLockingMode'] != 'top':
+                            vector.append(-3) # This is the default value inserted when parameters aren't relevant
+                        elif atpeParamFeature in self.atpeParameterValues:
+                            for value in self.atpeParameterValues[atpeParamFeature]:
+                                vector.append(1.0 if atpeParams[atpeParamFeature] == value else 0)
+                        else:
+                            vector.append(float(atpeParams[atpeParamFeature]))
+
+                    allFeatureKeysForATPEParamModel = copy.copy(self.atpeModelFeatureKeys)
+                    for atpeParamFeature in atpeParamFeatures:
+                        if atpeParamFeature in self.atpeParameterValues:
+                            for value in self.atpeParameterValues[atpeParamFeature]:
+                                allFeatureKeysForATPEParamModel.append(atpeParamFeature + "_" + value)
+                        else:
+                            allFeatureKeysForATPEParamModel.append(atpeParamFeature)
+
+                    value = self.parameterModels[atpeParameter].predict([vector])[0]
+                    featureContributions = self.parameterModels[atpeParameter].predict([vector], pred_contrib=True)[0]
+
+                    atpeParamDetails[atpeParameter] = {
+                        "value": None,
+                        "reason": None
+                    }
+
+                    # Set the value
+                    if atpeParameter in self.atpeParameterValues:
                         chosen = numpy.argmax(value)
-                        atpeParams[param] = self.atpeParameterValues[param][chosen]
+                        atpeParams[atpeParameter] = self.atpeParameterValues[atpeParameter][chosen]
                     else:
                         # Renormalize the predictions
-                        config = self.parameterModelConfigurations[param]
+                        config = self.parameterModelConfigurations[atpeParameter]
                         value = (((value - config['predMean']) / config['predStddev']) * config['origStddev']) + config['origMean']
-                        atpeParams[param] = value
+                        atpeParams[atpeParameter] = float(value)
+
+                    atpeParamDetails[atpeParameter]["reason"] = {}
+                    # If we are predicting a class, we get separate feature contributions for each class. Take the average
+                    if atpeParameter in self.atpeParameterValues:
+                        featureContributions = numpy.mean(numpy.reshape(featureContributions, newshape=(len(allFeatureKeysForATPEParamModel) + 1, len(self.atpeParameterValues[atpeParameter]))), axis=1)
+
+                    contributions = [(self.atpeModelFeatureKeys[index], float(featureContributions[index])) for index in range(len(self.atpeModelFeatureKeys))]
+                    contributions = sorted(contributions, key=lambda r: -r[1])
+                    # Only focus on the top 10% of features, since it gives more useful information. Otherwise the total gets really squashed out over many features,
+                    # because our model is highly regularized.
+                    contributions = contributions[:int(len(contributions)/10)]
+                    total = numpy.sum([contrib[1] for contrib in contributions])
+
+                    for contributionIndex, contribution in enumerate(contributions[:3]):
+                        atpeParamDetails[atpeParameter]['reason'][contribution[0]] = str(int(float(contribution[1]) * 100.0 / total)) + "%"
 
                 # Apply bounds to all the parameters
                 atpeParams['gamma'] = max(0.2, min(2.0, atpeParams['gamma']))
@@ -342,7 +431,14 @@ class Optimizer:
                     atpeParams['resultFilteringAgeMultiplier'] = None
                     atpeParams['resultFilteringLossRankMultiplier'] = None
 
+                for atpeParameter in self.atpeParameters:
+                    if atpeParams[atpeParameter] is None:
+                        del atpeParamDetails[atpeParameter]
+                    else:
+                        atpeParamDetails[atpeParameter]['value'] = atpeParams[atpeParameter]
+
             self.lastATPEParameters = atpeParams
+            self.atpeParamDetails = atpeParamDetails
 
             # pprint(atpeParams)
 
@@ -395,7 +491,10 @@ class Optimizer:
 
                 return primaryParameters + otherParameters, secondaryParameters, correlations
 
-            maxLoss = numpy.max(result['loss'] for result in self.results if result['loss'] is not None)
+            if len(self.results) == 0:
+                maxLoss = 1
+            else:
+                maxLoss = numpy.max([result['loss'] for result in self.results if result['loss'] is not None])
 
             lockedValues = {}
             filteredResults = []
@@ -773,13 +872,13 @@ class Optimizer:
         correlations = []
         for parameter in parameters:
             if parameter.config['type'] == 'number':
-                if len(set(getValue(result, parameter) for result in results if getValue(result, parameter) is not None)) < 2:
+                if len(set(getValue(result, parameter) for result in results if (getValue(result, parameter) is not None and result['loss'] is not None))) < 2:
                     correlations.append(0)
                 else:
                     values = []
                     valueLosses = []
                     for result in results:
-                        if isinstance(getValue(result, parameter), float) or isinstance(getValue(result, parameter), int):
+                        if result['loss'] is not None and isinstance(getValue(result, parameter), float) or isinstance(getValue(result, parameter), int):
                             values.append(getValue(result, parameter))
                             valueLosses.append(result['loss'])
 

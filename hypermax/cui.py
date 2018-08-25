@@ -299,13 +299,22 @@ def launchHypermaxUI(optimizer):
     currentOptimizationParamsLeft = None
     currentOptimizationParamsMiddle = None
     currentOptimizationParamsRight = None
-    def makeOptimizationInformationArea():
-        nonlocal currentOptimizationParamsLeft,currentOptimizationParamsMiddle, currentOptimizationParamsRight
+    def makeOptimizationParametersArea():
+        nonlocal currentOptimizationParamsLeft, currentOptimizationParamsMiddle, currentOptimizationParamsRight
         currentOptimizationParamsLeft = urwid.AttrWrap(urwid.Text(markup=''), 'body')
         currentOptimizationParamsMiddle = urwid.AttrWrap(urwid.Text(markup=''), 'body')
         currentOptimizationParamsRight = urwid.AttrWrap(urwid.Text(markup=''), 'body')
         columns = urwid.Columns([currentOptimizationParamsLeft, currentOptimizationParamsMiddle, currentOptimizationParamsRight])
-        return makeMountedFrame(urwid.Filler(columns), "Optimization Information")
+        return makeMountedFrame(urwid.Filler(columns), "Optimization Parameters")
+
+    optimizationDetailsLeft = None
+    optimizationDetailsRight = None
+    def makeOptimizationDetailsArea():
+        nonlocal optimizationDetailsLeft, optimizationDetailsRight
+        optimizationDetailsLeft = urwid.AttrWrap(urwid.Text(markup=''), 'body')
+        optimizationDetailsRight = urwid.AttrWrap(urwid.Text(markup=''), 'body')
+        columns = urwid.Columns([optimizationDetailsLeft, optimizationDetailsRight])
+        return makeMountedFrame(urwid.Filler(columns), "Optimization Details")
 
     def makeCurrentBestArea():
         nonlocal currentBestLeft, currentBestRight
@@ -373,7 +382,8 @@ def launchHypermaxUI(optimizer):
     currentTrialsArea = makeCurrentTrialsArea()
     graphArea = makeGraphArea()
     trialsArea = makeTrialsView()
-    optimizationInformationArea = makeOptimizationInformationArea()
+    optimizationParametersArea = makeOptimizationParametersArea()
+    optimizationDetailsArea = makeOptimizationDetailsArea()
 
     bottomArea = None
 
@@ -386,13 +396,17 @@ def launchHypermaxUI(optimizer):
     def showTrials(widget):
         bottomArea.contents[1] = (trialsArea, (urwid.WEIGHT, 1))
 
-    def showOptimizationInformation(widget):
-        bottomArea.contents[1] = (optimizationInformationArea, (urwid.WEIGHT, 1))
+    def showOptimizationParameters(widget):
+        bottomArea.contents[1] = (optimizationParametersArea, (urwid.WEIGHT, 1))
+
+    def showOptimizationDetails(widget):
+        bottomArea.contents[1] = (optimizationDetailsArea, (urwid.WEIGHT, 1))
 
     bottomButtons = urwid.Columns([
         urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Loss', on_press=showLossGraph), 'tab_buttons'), left=1, right=5)),
         urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Current Trials', on_press=showCurrentTrials), 'tab_buttons'), left=5, right=5)),
-        urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Optimization Information', on_press=showOptimizationInformation), 'tab_buttons'), left=5, right=5)),
+        urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('ATPE Parameters', on_press=showOptimizationParameters), 'tab_buttons'), left=5, right=5)),
+        urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('ATPE Details', on_press=showOptimizationDetails), 'tab_buttons'), left=5, right=5)),
         urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Trials', on_press=showTrials), 'tab_buttons'), left=5, right=1)),
     ])
 
@@ -478,6 +492,10 @@ def launchHypermaxUI(optimizer):
             currentOptimizationParamsLeft.set_text(optimizationParamsLeftText)
             currentOptimizationParamsMiddle.set_text(optimizationParamsMiddleText)
             currentOptimizationParamsRight.set_text(optimizationParamsRightText)
+
+            optimizationDetailsLeftText, optimizationDetailsRightText = splitObjectIntoColumns(optimizer.atpeParamDetails, 2)
+            optimizationDetailsLeft.set_text(optimizationDetailsLeftText)
+            optimizationDetailsRight.set_text(optimizationDetailsRightText)
 
             if optimizer.best:
                 paramKeys = [key for key in optimizer.best.keys() if key not in optimizer.resultInformationKeys]
