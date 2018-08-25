@@ -14,6 +14,7 @@ import random
 import subprocess
 import concurrent.futures
 import functools
+import lightgbm
 import math
 import atexit
 import jsonschema
@@ -33,6 +34,146 @@ class Optimizer:
         'time',
         'log',
         'error'
+    ]
+
+    atpeParameters = [
+        'gamma',
+        'nEICandidates',
+        'resultFilteringAgeMultiplier',
+        'resultFilteringLossRankMultiplier',
+        'resultFilteringMode',
+        'resultFilteringRandomProbability',
+        'secondaryCorrelationExponent',
+        'secondaryCorrelationMultiplier',
+        'secondaryCutoff',
+        'secondaryFixedProbability',
+        'secondaryLockingMode',
+        'secondaryProbabilityMode',
+        'secondaryTopLockingPercentile',
+    ]
+
+    atpeParameterValues = {
+        'resultFilteringMode': ['age', 'loss_rank', 'none', 'random'],
+        'secondaryLockingMode': ['random', 'top'],
+        'secondaryProbabilityMode': ['correlation', 'fixed']
+    }
+
+    featureKeys = [
+        'all_correlation_best_percentile25_ratio',
+        'all_correlation_best_percentile50_ratio',
+        'all_correlation_best_percentile75_ratio',
+        'all_correlation_kurtosis',
+        'all_correlation_percentile5_percentile25_ratio',
+        'all_correlation_skew',
+        'all_correlation_stddev_best_ratio',
+        'all_correlation_stddev_median_ratio',
+        'all_loss_best_percentile25_ratio',
+        'all_loss_best_percentile50_ratio',
+        'all_loss_best_percentile75_ratio',
+        'all_loss_kurtosis',
+        'all_loss_percentile5_percentile25_ratio',
+        'all_loss_skew',
+        'all_loss_stddev_best_ratio',
+        'all_loss_stddev_median_ratio',
+        'log10_cardinality',
+        'log10_trial',
+        'num_parameters',
+        'recent_10_correlation_best_percentile25_ratio',
+        'recent_10_correlation_best_percentile50_ratio',
+        'recent_10_correlation_best_percentile75_ratio',
+        'recent_10_correlation_kurtosis',
+        'recent_10_correlation_percentile5_percentile25_ratio',
+        'recent_10_correlation_skew',
+        'recent_10_correlation_stddev_best_ratio',
+        'recent_10_correlation_stddev_median_ratio',
+        'recent_10_loss_best_percentile25_ratio',
+        'recent_10_loss_best_percentile50_ratio',
+        'recent_10_loss_best_percentile75_ratio',
+        'recent_10_loss_kurtosis',
+        'recent_10_loss_percentile5_percentile25_ratio',
+        'recent_10_loss_skew',
+        'recent_10_loss_stddev_best_ratio',
+        'recent_10_loss_stddev_median_ratio',
+        'recent_15%_correlation_best_percentile25_ratio',
+        'recent_15%_correlation_best_percentile50_ratio',
+        'recent_15%_correlation_best_percentile75_ratio',
+        'recent_15%_correlation_kurtosis',
+        'recent_15%_correlation_percentile5_percentile25_ratio',
+        'recent_15%_correlation_skew',
+        'recent_15%_correlation_stddev_best_ratio',
+        'recent_15%_correlation_stddev_median_ratio',
+        'recent_15%_loss_best_percentile25_ratio',
+        'recent_15%_loss_best_percentile50_ratio',
+        'recent_15%_loss_best_percentile75_ratio',
+        'recent_15%_loss_kurtosis',
+        'recent_15%_loss_percentile5_percentile25_ratio',
+        'recent_15%_loss_skew',
+        'recent_15%_loss_stddev_best_ratio',
+        'recent_15%_loss_stddev_median_ratio',
+        'recent_25_correlation_best_percentile25_ratio',
+        'recent_25_correlation_best_percentile50_ratio',
+        'recent_25_correlation_best_percentile75_ratio',
+        'recent_25_correlation_kurtosis',
+        'recent_25_correlation_percentile5_percentile25_ratio',
+        'recent_25_correlation_skew',
+        'recent_25_correlation_stddev_best_ratio',
+        'recent_25_correlation_stddev_median_ratio',
+        'recent_25_loss_best_percentile25_ratio',
+        'recent_25_loss_best_percentile50_ratio',
+        'recent_25_loss_best_percentile75_ratio',
+        'recent_25_loss_kurtosis',
+        'recent_25_loss_percentile5_percentile25_ratio',
+        'recent_25_loss_skew',
+        'recent_25_loss_stddev_best_ratio',
+        'recent_25_loss_stddev_median_ratio',
+        'top_10%_correlation_best_percentile25_ratio',
+        'top_10%_correlation_best_percentile50_ratio',
+        'top_10%_correlation_best_percentile75_ratio',
+        'top_10%_correlation_kurtosis',
+        'top_10%_correlation_percentile5_percentile25_ratio',
+        'top_10%_correlation_skew',
+        'top_10%_correlation_stddev_best_ratio',
+        'top_10%_correlation_stddev_median_ratio',
+        'top_10%_loss_best_percentile25_ratio',
+        'top_10%_loss_best_percentile50_ratio',
+        'top_10%_loss_best_percentile75_ratio',
+        'top_10%_loss_kurtosis',
+        'top_10%_loss_percentile5_percentile25_ratio',
+        'top_10%_loss_skew',
+        'top_10%_loss_stddev_best_ratio',
+        'top_10%_loss_stddev_median_ratio',
+        'top_20%_correlation_best_percentile25_ratio',
+        'top_20%_correlation_best_percentile50_ratio',
+        'top_20%_correlation_best_percentile75_ratio',
+        'top_20%_correlation_kurtosis',
+        'top_20%_correlation_percentile5_percentile25_ratio',
+        'top_20%_correlation_skew',
+        'top_20%_correlation_stddev_best_ratio',
+        'top_20%_correlation_stddev_median_ratio',
+        'top_20%_loss_best_percentile25_ratio',
+        'top_20%_loss_best_percentile50_ratio',
+        'top_20%_loss_best_percentile75_ratio',
+        'top_20%_loss_kurtosis',
+        'top_20%_loss_percentile5_percentile25_ratio',
+        'top_20%_loss_skew',
+        'top_20%_loss_stddev_best_ratio',
+        'top_20%_loss_stddev_median_ratio',
+        'top_30%_correlation_best_percentile25_ratio',
+        'top_30%_correlation_best_percentile50_ratio',
+        'top_30%_correlation_best_percentile75_ratio',
+        'top_30%_correlation_kurtosis',
+        'top_30%_correlation_percentile5_percentile25_ratio',
+        'top_30%_correlation_skew',
+        'top_30%_correlation_stddev_best_ratio',
+        'top_30%_correlation_stddev_median_ratio',
+        'top_30%_loss_best_percentile25_ratio',
+        'top_30%_loss_best_percentile50_ratio',
+        'top_30%_loss_best_percentile75_ratio',
+        'top_30%_loss_kurtosis',
+        'top_30%_loss_percentile5_percentile25_ratio',
+        'top_30%_loss_skew',
+        'top_30%_loss_stddev_best_ratio',
+        'top_30%_loss_stddev_median_ratio'
     ]
 
     def __init__(self, configuration):
@@ -64,6 +205,16 @@ class Optimizer:
         self.occupiedWorkers = set()
         self.trialNumber = 0
 
+        self.parameterModels = {}
+        self.parameterModelConfigurations = {}
+        for param in self.atpeParameters:
+            self.parameterModels[param] = lightgbm.Booster(model_file='models/model-' + param + '.txt')
+            if param not in self.atpeParameterValues:
+                with open('models/model-' + param + "-configuration.json", 'rt') as file:
+                    data = json.load(file)
+                    self.parameterModelConfigurations[param] = data
+
+        self.lastATPEParameters = None
 
     def __del__(self):
         if self.threadExecutor:
@@ -95,8 +246,8 @@ class Optimizer:
             params = parameters
             return {"loss": 0.5, 'status': 'ok'}
 
-        trials = self.convertResultsToTrials(self.results)
         if self.searchConfig['method'] == 'tpe':
+            trials = self.convertResultsToTrials(self.results)
             hyperopt.fmin(fn=sample,
                           space=self.space,
                           algo=functools.partial(hyperopt.tpe.suggest, n_EI_candidates=24, gamma=0.25),
@@ -104,6 +255,7 @@ class Optimizer:
                           trials=trials,
                           rstate=rstate)
         elif self.searchConfig['method'] == 'random':
+            trials = self.convertResultsToTrials(self.results)
             hyperopt.fmin(fn=sample,
                           space=self.space,
                           algo=hyperopt.rand.suggest,
@@ -111,81 +263,211 @@ class Optimizer:
                           trials=trials,
                           rstate=rstate)
         elif self.searchConfig['method'] == 'atpe':
-            log10_cardinality = Hyperparameter(self.config.data['hyperparameters']).getLog10Cardinality()
-
-            # This equation was derived from research, see https://drive.google.com/open?id=1JpQZWM8S-n4NLq4g216mlE0xWehMErOUKtGUf3EUOSU
-            n_EI_candidates = int(max(2, min(50, int(1 + 40 * math.pow(10, -0.1 * log10_cardinality)))))
-
-            if len(self.results) > 20:
-                # Calculate statistics on the current results
-                losses = numpy.array([result['loss'] for result in self.results if result['loss'] is not None])
-                median = numpy.median(losses)
-                standard_deviation = numpy.std(losses)
-                skew = scipy.stats.skew(losses)
-
-                # These equations were derived from research, see https://drive.google.com/open?id=1JpQZWM8S-n4NLq4g216mlE0xWehMErOUKtGUf3EUOSU
-                gamma = max(0.25, min(2.0, 0.23 + 0.53 * skew + log10_cardinality * 0.011 + (standard_deviation / median) * -0.3))
-                secondaryCutoff = max(0, min(1, 0.65 + (standard_deviation / median) * -0.07 + log10_cardinality * 0.02))
-            else:
-                gamma = 1.0
-                secondaryCutoff = 0.0
-
-            totalWeight = 0
-            correlations = {}
             parameters = Hyperparameter(self.config.data['hyperparameters']).getFlatParameters()
 
-            secondaryParameters = []
+            initializationRounds = 10
 
-            if len(self.results) > 20:
-                for parameter in parameters:
-                    if 'enum' in parameter.config or parameter.config['type'] == 'number':
-                        params = []
-                        losses = []
+            atpeParams = {}
+            if len(set(result['loss'] for result in self.results)) < initializationRounds:
+                atpeParams = {
+                    'gamma': 1.0,
+                    'nEICandidates': 24,
+                    'resultFilteringAgeMultiplier': None,
+                    'resultFilteringLossRankMultiplier': None,
+                    'resultFilteringMode': "none",
+                    'resultFilteringRandomProbability': None,
+                    'secondaryCorrelationExponent': 1.0,
+                    'secondaryCorrelationMultiplier': None,
+                    'secondaryCutoff': 0,
+                    'secondarySorting': 0,
+                    'secondaryFixedProbability': 0.5,
+                    'secondaryLockingMode': 'top',
+                    'secondaryProbabilityMode': 'fixed',
+                    'secondaryTopLockingPercentile': 0
+                }
+            else:
+                # Calculate the statistics for the distribution
+                stats = self.computeAllResultStatistics(self.results)
+                stats['num_parameters'] = len(parameters)
+                stats['log10_cardinality'] = Hyperparameter(self.config.data['hyperparameters']).getLog10Cardinality()
+                stats['log10_trial'] = math.log10(len(self.results))
+                vector = []
+
+                for feature in self.featureKeys:
+                    vector.append(stats[feature])
+
+                for param in self.atpeParameters:
+                    value = self.parameterModels[param].predict([vector])[0]
+                    if param in self.atpeParameterValues:
+                        chosen = numpy.argmax(value)
+                        atpeParams[param] = self.atpeParameterValues[param][chosen]
+                    else:
+                        # Renormalize the predictions
+                        config = self.parameterModelConfigurations[param]
+                        value = (((value - config['predMean']) / config['predStddev']) * config['origStddev']) + config['origMean']
+                        atpeParams[param] = value
+
+                # Apply bounds to all the parameters
+                atpeParams['gamma'] = max(0.2, min(2.0, atpeParams['gamma']))
+                atpeParams['nEICandidates'] = int(max(2.0, min(48, atpeParams['nEICandidates'])))
+                atpeParams['resultFilteringAgeMultiplier'] = max(1.0, min(4.0, atpeParams['resultFilteringAgeMultiplier']))
+                atpeParams['resultFilteringLossRankMultiplier'] = max(1.0, min(4.0, atpeParams['resultFilteringLossRankMultiplier']))
+                atpeParams['resultFilteringRandomProbability'] = max(0.7, min(0.9, atpeParams['resultFilteringRandomProbability']))
+                atpeParams['secondaryCorrelationExponent'] = max(1.0, min(3.0, atpeParams['secondaryCorrelationExponent']))
+                atpeParams['secondaryCorrelationMultiplier'] = max(0.2, min(1.8, atpeParams['secondaryCorrelationMultiplier']))
+                atpeParams['secondaryCutoff'] = max(-1.0, min(1.0, atpeParams['secondaryCutoff']))
+                atpeParams['secondaryFixedProbability'] = max(0.2, min(0.8, atpeParams['secondaryFixedProbability']))
+                atpeParams['secondaryTopLockingPercentile'] = max(0, min(10.0, atpeParams['secondaryTopLockingPercentile']))
+
+                # Now blank out unneeded params so they don't confuse us
+                if atpeParams['secondaryLockingMode'] == 'random':
+                    atpeParams['secondaryTopLockingPercentile'] = None
+
+                if atpeParams['secondaryProbabilityMode'] == 'fixed':
+                    atpeParams['secondaryCorrelationMultiplier'] = None
+                else:
+                    atpeParams['secondaryFixedProbability'] = None
+
+                if atpeParams['resultFilteringMode'] == 'none':
+                    atpeParams['resultFilteringAgeMultiplier'] = None
+                    atpeParams['resultFilteringLossRankMultiplier'] = None
+                    atpeParams['resultFilteringRandomProbability'] = None
+                elif atpeParams['resultFilteringMode'] == 'age':
+                    atpeParams['resultFilteringLossRankMultiplier'] = None
+                    atpeParams['resultFilteringRandomProbability'] = None
+                elif atpeParams['resultFilteringMode'] == 'loss_rank':
+                    atpeParams['resultFilteringAgeMultiplier'] = None
+                    atpeParams['resultFilteringRandomProbability'] = None
+                elif atpeParams['resultFilteringMode'] == 'random':
+                    atpeParams['resultFilteringAgeMultiplier'] = None
+                    atpeParams['resultFilteringLossRankMultiplier'] = None
+
+            self.lastATPEParameters = atpeParams
+
+            # pprint(atpeParams)
+
+            def computePrimarySecondary():
+                if len(self.results) < initializationRounds:
+                    return parameters, [], [0.5] * len(parameters)  # Put all parameters as primary
+
+                if len(set(result['loss'] for result in self.results)) < 5:
+                    return parameters, [], [0.5] * len(parameters)  # Put all parameters as primary
+
+                numberParameters = [parameter for parameter in parameters if parameter.config['type'] == 'number']
+                otherParameters = [parameter for parameter in parameters if parameter.config['type'] != 'number']
+
+                totalWeight = 0
+                correlations = {}
+                for parameter in numberParameters:
+                    if len(set(result[parameter.name] for result in self.results if result[parameter.name] is not None)) < 2:
+                        correlations[parameter.name] = 0
+                    else:
+                        values = []
+                        valueLosses = []
                         for result in self.results:
-                            if result[parameter.root[5:]] is None or result[parameter.root[5:]] == '' or result['loss'] is None:
-                                continue
-                            elif 'enum' in parameter.config:
-                                if isinstance(result[parameter.root[5:]], str):
-                                    params.append(parameter.config['enum'].index(result[parameter.root[5:]]))
-                                    losses.append(result['loss'])
-                                else:
-                                    params.append(result[parameter.root[5:]])
-                                    losses.append(result['loss'])
-                            elif parameter.config['type'] == 'number':
-                                params.append(result[parameter.root[5:]])
-                                losses.append(result['loss'])
+                            if result[parameter.name] is not None and result['loss'] is not None:
+                                values.append(result[parameter.name])
+                                valueLosses.append(result['loss'])
 
-                        if len(set(params)) < 2 or len(set(losses)) < 2:
-                            correlations[parameter.root[5:]] = 0.5
-                        else:
-                            correlation = abs(scipy.stats.spearmanr(numpy.array(params), numpy.array(losses))[0])
-                            correlations[parameter.root[5:]] = correlation
-                            totalWeight += correlation
+                        correlation = math.pow(abs(scipy.stats.spearmanr(values, valueLosses)[0]), atpeParams['secondaryCorrelationExponent'])
+                        correlations[parameter.name] = correlation
+                        totalWeight += correlation
 
-                threshold = totalWeight * secondaryCutoff
+                threshold = totalWeight * abs(atpeParams['secondaryCutoff'])
 
+                if atpeParams['secondaryCutoff'] < 0:
+                    # Reverse order - we lock in the highest correlated parameters
+                    sortedParameters = sorted(numberParameters, key=lambda parameter: correlations[parameter.name])
+                else:
+                    # Normal order - sort properties by their correlation to lock in lowest correlated parameters
+                    sortedParameters = sorted(numberParameters, key=lambda parameter: -correlations[parameter.name])
+
+                primaryParameters = []
                 secondaryParameters = []
                 cumulative = totalWeight
-                # Sort properties by their weight
-                sortedParameters = sorted(parameters, key=lambda parameter: -correlations[parameter.root[5:]])
                 for parameter in sortedParameters:
-                    if 'enum' in parameter.config or parameter.config['type'] == 'number':
-                        if cumulative < threshold:
-                            secondaryParameters.append(parameter)
+                    if cumulative < threshold:
+                        secondaryParameters.append(parameter)
+                    else:
+                        primaryParameters.append(parameter)
 
-                        cumulative -= correlations[parameter.root[5:]]
+                    cumulative -= correlations[parameter.name]
 
-            # For each secondary parameter, we have a 50-50 probability of locking it into its current best value
+                return primaryParameters + otherParameters, secondaryParameters, correlations
+
+            maxLoss = numpy.max(result['loss'] for result in self.results if result['loss'] is not None)
+
             lockedValues = {}
-            for parameter in secondaryParameters:
-                if random.uniform(0, 1) < 0.5:
-                    lockedValues[parameter.root] = self.best[parameter.root[5:]]
+            filteredResults = []
+            removedResults = []
+            if len(self.results) > initializationRounds:
+                primaryParameters, secondaryParameters, correlations = computePrimarySecondary()
+
+                sortedResults = list(sorted(list(self.results), key=lambda result: (result['loss'] if result['loss'] is not None else (maxLoss+1))))
+                topResults = sortedResults
+                if atpeParams['secondaryLockingMode'] == 'top':
+                    topResultsN = max(1, int(math.ceil(len(sortedResults) * atpeParams['secondaryTopLockingPercentile'] / 100.0)))
+                    topResults = sortedResults[:topResultsN]
+
+                # Any secondary parameters have may be locked to either the current best value or any value within the result pool.
+                for secondary in secondaryParameters:
+                    if atpeParams['secondaryProbabilityMode'] == 'fixed':
+                        if random.uniform(0, 1) < atpeParams['secondaryFixedProbability']:
+                            if atpeParams['secondaryLockingMode'] == 'top':
+                                lockResult = random.choice(topResults)
+                                if lockResult[secondary.name] is not None:
+                                    lockedValues[secondary.name] = lockResult[secondary.name]
+                            elif atpeParams['secondaryLockingMode'] == 'random':
+                                if 'rounding' in secondary.config:
+                                    lockedValues[secondary.name] = round(random.uniform(secondary.config['min'], secondary.config['max']) / secondary.config['rounding']) * secondary.config['rounding']
+                                else:
+                                    lockedValues[secondary.name] = random.uniform(secondary.config['min'], secondary.config['max'])
+                    elif atpeParams['secondaryProbabilityMode'] == 'correlation':
+                        probability = max(0, min(1, abs(correlations[secondary.name]) * atpeParams['secondaryCorrelationMultiplier']))
+                        if random.uniform(0, 1) < probability:
+                            if atpeParams['secondaryLockingMode'] == 'top':
+                                lockResult = random.choice(topResults)
+                                if lockResult[secondary.name] is not None:
+                                    lockedValues[secondary.name] = lockResult[secondary.name]
+                            elif atpeParams['secondaryLockingMode'] == 'random':
+                                if 'rounding' in secondary['space']:
+                                    lockedValues[secondary.name] = round(random.uniform(secondary.config['min'], secondary.config['max']) / secondary.config['rounding']) * secondary.config['rounding']
+                                else:
+                                    lockedValues[secondary.name] = random.uniform(secondary.config['min'], secondary.config['max'])
+
+                # Now last step, we filter results prior to sending them into ATPE
+                for resultIndex, result in enumerate(self.results):
+                    if atpeParams['resultFilteringMode'] == 'none':
+                        filteredResults.append(result)
+                    elif atpeParams['resultFilteringMode'] == 'random':
+                        if random.uniform(0, 1) < atpeParams['resultFilteringRandomProbability']:
+                            filteredResults.append(result)
+                        else:
+                            removedResults.append(result)
+                    elif atpeParams['resultFilteringMode'] == 'age':
+                        age = float(resultIndex) / float(len(self.results))
+                        if random.uniform(0, 1) < (atpeParams['resultFilteringAgeMultiplier'] * age):
+                            filteredResults.append(result)
+                        else:
+                            removedResults.append(result)
+                    elif atpeParams['resultFilteringMode'] == 'loss_rank':
+                        rank = 1.0 - (float(sortedResults.index(result)) / float(len(self.results)))
+                        if random.uniform(0, 1) < (atpeParams['resultFilteringLossRankMultiplier'] * rank):
+                            filteredResults.append(result)
+                        else:
+                            removedResults.append(result)
+
+            # If we are in initialization, or by some other fluke of random nature that we end up with no results after filtering,
+            # then just use all the results
+            if len(filteredResults) == 0:
+                filteredResults = self.results
 
             hyperopt.fmin(fn=sample,
                           space=self.config.createHyperparameterSpace(lockedValues),
-                          algo=functools.partial(hyperopt.tpe.suggest, n_EI_candidates=n_EI_candidates, gamma=gamma, n_startup_jobs=10),
+                          algo=functools.partial(hyperopt.tpe.suggest, n_startup_jobs=initializationRounds, gamma=atpeParams['gamma'],
+                                                 n_EI_candidates=int(atpeParams['nEICandidates'])),
                           max_evals=1,
-                          trials=trials,
+                          trials=self.convertResultsToTrials(filteredResults),
                           rstate=rstate)
 
         return params
@@ -363,7 +645,7 @@ class Optimizer:
 
             for key in result.keys():
                 if key not in self.resultInformationKeys:
-                    matchingParameters = [parameter for parameter in parameters if parameter.root[5:] == key]
+                    matchingParameters = [parameter for parameter in parameters if parameter.name == key]
                     if len(matchingParameters)==0:
                         raise ValueError("Our hyperparameter search space did not contain a " + key + " parameter.")
 
@@ -434,3 +716,183 @@ class Optimizer:
                 process = subprocess.run(['git push'], cwd=os.path.join(directory, 'hypermax-results'), stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         except Exception as e:
             print(e)
+
+
+    def computePartialResultStatistics(self, results):
+        losses = numpy.array(sorted([result['loss'] for result in results if result['loss'] is not None]))
+
+        bestLoss = 0
+        percentile5Loss = 0
+        percentile25Loss = 0
+        percentile50Loss = 0
+        percentile75Loss = 0
+        statistics = {}
+
+        if len(set(losses)) > 1:
+            bestLoss = numpy.percentile(losses, 0)
+            percentile5Loss = numpy.percentile(losses, 5)
+            percentile25Loss = numpy.percentile(losses, 25)
+            percentile50Loss = numpy.percentile(losses, 50)
+            percentile75Loss = numpy.percentile(losses, 75)
+
+            statistics['loss_skew'] = scipy.stats.skew(losses)
+            statistics['loss_kurtosis'] = scipy.stats.kurtosis(losses)
+        else:
+            statistics['loss_skew'] = 0
+            statistics['loss_kurtosis'] = 0
+
+        if percentile50Loss == 0:
+            statistics['loss_stddev_median_ratio'] = 0
+            statistics['loss_best_percentile50_ratio'] = 0
+        else:
+            statistics['loss_stddev_median_ratio'] = numpy.std(losses) / percentile50Loss
+            statistics['loss_best_percentile50_ratio'] = bestLoss / percentile50Loss
+
+        if bestLoss == 0:
+            statistics['loss_stddev_best_ratio'] = 0
+        else:
+            statistics['loss_stddev_best_ratio'] = numpy.std(losses) / bestLoss
+
+        if percentile25Loss == 0:
+            statistics['loss_best_percentile25_ratio'] = 0
+            statistics['loss_percentile5_percentile25_ratio'] = 0
+        else:
+            statistics['loss_best_percentile25_ratio'] = bestLoss / percentile25Loss
+            statistics['loss_percentile5_percentile25_ratio'] = percentile5Loss / percentile25Loss
+
+        if percentile75Loss == 0:
+            statistics['loss_best_percentile75_ratio'] = 0
+        else:
+            statistics['loss_best_percentile75_ratio'] = bestLoss / percentile75Loss
+
+        def getValue(result, parameter):
+            return result[parameter.name]
+
+        # Now we compute correlations between each parameter and the loss
+        parameters = Hyperparameter(self.config.data['hyperparameters']).getFlatParameters()
+        correlations = []
+        for parameter in parameters:
+            if parameter.config['type'] == 'number':
+                if len(set(getValue(result, parameter) for result in results if getValue(result, parameter) is not None)) < 2:
+                    correlations.append(0)
+                else:
+                    values = []
+                    valueLosses = []
+                    for result in results:
+                        if isinstance(getValue(result, parameter), float) or isinstance(getValue(result, parameter), int):
+                            values.append(getValue(result, parameter))
+                            valueLosses.append(result['loss'])
+
+                    correlation = abs(scipy.stats.spearmanr(values, valueLosses)[0])
+                    correlations.append(correlation)
+
+        correlations = numpy.array(correlations)
+
+        if len(set(correlations)) == 1:
+            statistics['correlation_skew'] = 0
+            statistics['correlation_kurtosis'] = 0
+            statistics['correlation_stddev_median_ratio'] = 0
+            statistics['correlation_stddev_best_ratio'] = 0
+
+            statistics['correlation_best_percentile25_ratio'] = 0
+            statistics['correlation_best_percentile50_ratio'] = 0
+            statistics['correlation_best_percentile75_ratio'] = 0
+            statistics['correlation_percentile5_percentile25_ratio'] = 0
+        else:
+            bestCorrelation = numpy.percentile(correlations, 100) # Correlations are in the opposite order of losses, higher correlation is considered "best"
+            percentile5Correlation = numpy.percentile(correlations, 95)
+            percentile25Correlation = numpy.percentile(correlations, 75)
+            percentile50Correlation = numpy.percentile(correlations, 50)
+            percentile75Correlation = numpy.percentile(correlations, 25)
+
+            statistics['correlation_skew'] = scipy.stats.skew(correlations)
+            statistics['correlation_kurtosis'] = scipy.stats.kurtosis(correlations)
+
+            if percentile50Correlation == 0:
+                statistics['correlation_stddev_median_ratio'] = 0
+                statistics['correlation_best_percentile50_ratio'] = 0
+            else:
+                statistics['correlation_stddev_median_ratio'] = numpy.std(correlations) / percentile50Correlation
+                statistics['correlation_best_percentile50_ratio'] = bestCorrelation / percentile50Correlation
+
+            if bestCorrelation == 0:
+                statistics['correlation_stddev_best_ratio'] = 0
+            else:
+                statistics['correlation_stddev_best_ratio'] = numpy.std(correlations) / bestCorrelation
+
+            if percentile25Correlation == 0:
+                statistics['correlation_best_percentile25_ratio'] = 0
+                statistics['correlation_percentile5_percentile25_ratio'] = 0
+            else:
+                statistics['correlation_best_percentile25_ratio'] = bestCorrelation / percentile25Correlation
+                statistics['correlation_percentile5_percentile25_ratio'] = percentile5Correlation / percentile25Correlation
+
+            if percentile75Correlation == 0:
+                statistics['correlation_best_percentile75_ratio'] = 0
+            else:
+                statistics['correlation_best_percentile75_ratio'] = bestCorrelation / percentile75Correlation
+
+        return statistics
+
+    def computeAllResultStatistics(self, results):
+        losses = numpy.array(sorted([result['loss'] for result in results if result['loss'] is not None]))
+
+        if len(set(losses)) > 1:
+            percentile10Loss = numpy.percentile(losses, 10)
+            percentile20Loss = numpy.percentile(losses, 20)
+            percentile30Loss = numpy.percentile(losses, 30)
+        else:
+            percentile10Loss = losses[0]
+            percentile20Loss = losses[0]
+            percentile30Loss = losses[0]
+
+        allResults = list(results)
+        percentile10Results = [result for result in results if result['loss'] is not None and result['loss'] <= percentile10Loss]
+        percentile20Results = [result for result in results if result['loss'] is not None and result['loss'] <= percentile20Loss]
+        percentile30Results = [result for result in results if result['loss'] is not None and result['loss'] <= percentile30Loss]
+
+        recent10Count = min(len(results), 10)
+        recent10Results = results[-recent10Count:]
+
+        recent25Count = min(len(results), 25)
+        recent25Results = results[-recent25Count:]
+
+        recent15PercentCount = max(math.ceil(len(results)*0.15), 5)
+        recent15PercentResults = results[-recent15PercentCount:]
+
+        statistics = {}
+        allResultStatistics = self.computePartialResultStatistics(allResults)
+        for stat,value in allResultStatistics.items():
+            statistics['all_' + stat] = value
+
+        percentile10Statistics = self.computePartialResultStatistics(percentile10Results)
+        for stat,value in percentile10Statistics.items():
+            statistics['top_10%_' + stat] = value
+
+        percentile20Statistics = self.computePartialResultStatistics(percentile20Results)
+        for stat,value in percentile20Statistics.items():
+            statistics['top_20%_' + stat] = value
+
+        percentile30Statistics = self.computePartialResultStatistics(percentile30Results)
+        for stat,value in percentile30Statistics.items():
+            statistics['top_30%_' + stat] = value
+
+        recent10Statistics = self.computePartialResultStatistics(recent10Results)
+        for stat,value in recent10Statistics.items():
+            statistics['recent_10_' + stat] = value
+
+        recent25Statistics = self.computePartialResultStatistics(recent25Results)
+        for stat,value in recent25Statistics.items():
+            statistics['recent_25_' + stat] = value
+
+        recent15PercentResult = self.computePartialResultStatistics(recent15PercentResults)
+        for stat,value in recent15PercentResult.items():
+            statistics['recent_15%_' + stat] = value
+
+        # Although we have added lots of protection in the computePartialResultStatistics code, one last hedge against any NaN or infinity values coming up
+        # in our statistics
+        for key in statistics.keys():
+            if math.isnan(statistics[key]) or math.isinf(statistics[key]):
+                statistics[key] = 0
+
+        return statistics

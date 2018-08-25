@@ -8,6 +8,7 @@ class Hyperparameter:
     def __init__(self, config, root='root'):
         self.config = config
         self.root = root
+        self.name = root[5:]
 
 
 
@@ -162,7 +163,7 @@ class Hyperparameter:
             return log10_cardinality
         elif self.config['type'] == 'number':
             if 'rounding' in self.config:
-                return math.log10(min(10, (self.config['max'] - self.config['min']) / self.config['rounding'] + 1))
+                return math.log10(min(20, (self.config['max'] - self.config['min']) / self.config['rounding'] + 1))
             else:
-                return math.log10(10) # Default of 10 for fully uniform numbers.
+                return math.log10(20) # Default of 20 for fully uniform numbers.
 

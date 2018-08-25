@@ -294,7 +294,18 @@ def launchHypermaxUI(optimizer):
         currentTrialsMiddle = urwid.AttrWrap(urwid.Text(markup=''), 'body')
         currentTrialsRight = urwid.AttrWrap(urwid.Text(markup=''), 'body')
         columns = urwid.Columns([currentTrialsLeft, currentTrialsMiddle, currentTrialsRight])
-        return makeMountedFrame(urwid.Filler(columns), "Status")
+        return makeMountedFrame(urwid.Filler(columns), "Current Trials")
+
+    currentOptimizationParamsLeft = None
+    currentOptimizationParamsMiddle = None
+    currentOptimizationParamsRight = None
+    def makeOptimizationInformationArea():
+        nonlocal currentOptimizationParamsLeft,currentOptimizationParamsMiddle, currentOptimizationParamsRight
+        currentOptimizationParamsLeft = urwid.AttrWrap(urwid.Text(markup=''), 'body')
+        currentOptimizationParamsMiddle = urwid.AttrWrap(urwid.Text(markup=''), 'body')
+        currentOptimizationParamsRight = urwid.AttrWrap(urwid.Text(markup=''), 'body')
+        columns = urwid.Columns([currentOptimizationParamsLeft, currentOptimizationParamsMiddle, currentOptimizationParamsRight])
+        return makeMountedFrame(urwid.Filler(columns), "Optimization Information")
 
     def makeCurrentBestArea():
         nonlocal currentBestLeft, currentBestRight
@@ -362,6 +373,7 @@ def launchHypermaxUI(optimizer):
     currentTrialsArea = makeCurrentTrialsArea()
     graphArea = makeGraphArea()
     trialsArea = makeTrialsView()
+    optimizationInformationArea = makeOptimizationInformationArea()
 
     bottomArea = None
 
@@ -374,9 +386,13 @@ def launchHypermaxUI(optimizer):
     def showTrials(widget):
         bottomArea.contents[1] = (trialsArea, (urwid.WEIGHT, 1))
 
+    def showOptimizationInformation(widget):
+        bottomArea.contents[1] = (optimizationInformationArea, (urwid.WEIGHT, 1))
+
     bottomButtons = urwid.Columns([
         urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Loss', on_press=showLossGraph), 'tab_buttons'), left=1, right=5)),
         urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Current Trials', on_press=showCurrentTrials), 'tab_buttons'), left=5, right=5)),
+        urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Optimization Information', on_press=showOptimizationInformation), 'tab_buttons'), left=5, right=5)),
         urwid.Filler(urwid.Padding(urwid.AttrWrap(urwid.Button('Trials', on_press=showTrials), 'tab_buttons'), left=5, right=1)),
     ])
 
@@ -396,6 +412,34 @@ def launchHypermaxUI(optimizer):
 
     loop = urwid.MainLoop(background, palette, screen, pop_ups=True, unhandled_input=unhandled)
 
+    def formatParamVal(value):
+        if isinstance(value, float):
+            return float('{:.4E}'.format(value))
+        else:
+            return value
+
+    def splitObjectIntoColumns(obj, num_columns):
+        texts = [""] * num_columns
+        if obj is None:
+            return texts
+
+        paramKeys = sorted(list(obj.keys()))
+
+        cutoffs = []
+        for cutoff in range(num_columns+1):
+            cutoffs.append(int((len(paramKeys) + 1) * (cutoff) / 3))
+
+        for column in range(num_columns):
+            columnKeys = paramKeys[cutoffs[column]:cutoffs[column+1]]
+            texts[column] += yaml.dump({key: formatParamVal(obj[key]) for key in columnKeys}, default_flow_style=False)
+
+        lines = max(*[text.count("\n") for text in texts])
+
+        for index in range(len(texts)):
+            texts[index] += "\n" * (lines - texts[index].count("\n"))
+
+        return tuple(texts)
+
     try:
         loop.start()
         while True:
@@ -407,11 +451,6 @@ def launchHypermaxUI(optimizer):
             if keys:
                 loop.process_input(keys)
 
-            def formatParamVal(value):
-                if isinstance(value, float):
-                    return float('{:.4E}'.format(value))
-                else:
-                    return value
 
             currentTrialsLeftText = ""
             currentTrialsMiddleText = ""
@@ -419,29 +458,13 @@ def launchHypermaxUI(optimizer):
             for trial in optimizer.currentTrials:
                 trial = trial
 
-                paramKeys = sorted(list(trial['params'].keys()))
-
-                leftCutoff = int((len(paramKeys)+1)/3)
-                middleCutoff = int((len(paramKeys)+1)*2/3)
-
-                leftParamKeys = paramKeys[:leftCutoff]
-                middleParamKeys = paramKeys[leftCutoff:middleCutoff]
-                rightParamKeys = paramKeys[middleCutoff:]
+                leftText, middleText, rightText = splitObjectIntoColumns(trial['params'], 3)
 
                 runningTime = (datetime.datetime.now() - trial['start']).total_seconds()
 
-                leftText = "Time: " + str(formatParamVal(runningTime)) + " seconds\n\n"
-                middleText = "Trial: #" + str(trial['trial']) + " \n\n"
-                rightText = "\n"
-
-                leftText += yaml.dump({key:formatParamVal(trial['params'][key]) for key in leftParamKeys}, default_flow_style=False)
-                middleText += yaml.dump({key:formatParamVal(trial['params'][key]) for key in middleParamKeys}, default_flow_style=False)
-                rightText += yaml.dump({key:formatParamVal(trial['params'][key]) for key in rightParamKeys}, default_flow_style=False)
-
-                lines = max(leftText.count("\n"), middleText.count("\n"), rightText.count("\n"))
-                leftText += "\n" * (lines - leftText.count("\n"))
-                middleText += "\n" * (lines - middleText.count("\n"))
-                rightText += "\n" * (lines - rightText.count("\n"))
+                leftText = "Time: " + str(formatParamVal(runningTime)) + " seconds\n\n" + leftText
+                middleText = "Trial: #" + str(trial['trial']) + " \n\n" + middleText
+                rightText = "\n\n" + rightText
 
                 currentTrialsLeftText += leftText
                 currentTrialsMiddleText += middleText
@@ -450,6 +473,11 @@ def launchHypermaxUI(optimizer):
             currentTrialsLeft.set_text(currentTrialsLeftText)
             currentTrialsMiddle.set_text(currentTrialsMiddleText)
             currentTrialsRight.set_text(currentTrialsRightText)
+
+            optimizationParamsLeftText, optimizationParamsMiddleText, optimizationParamsRightText = splitObjectIntoColumns(optimizer.lastATPEParameters, 3)
+            currentOptimizationParamsLeft.set_text(optimizationParamsLeftText)
+            currentOptimizationParamsMiddle.set_text(optimizationParamsMiddleText)
+            currentOptimizationParamsRight.set_text(optimizationParamsRightText)
 
             if optimizer.best:
                 paramKeys = [key for key in optimizer.best.keys() if key not in optimizer.resultInformationKeys]
