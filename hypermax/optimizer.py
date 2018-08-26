@@ -396,17 +396,27 @@ class Optimizer:
                     for contributionIndex, contribution in enumerate(contributions[:3]):
                         atpeParamDetails[atpeParameter]['reason'][contribution[0]] = str(int(float(contribution[1]) * 100.0 / total)) + "%"
 
-                # Apply bounds to all the parameters
-                atpeParams['gamma'] = max(0.2, min(2.0, atpeParams['gamma']))
-                atpeParams['nEICandidates'] = int(max(2.0, min(48, atpeParams['nEICandidates'])))
-                atpeParams['resultFilteringAgeMultiplier'] = max(1.0, min(4.0, atpeParams['resultFilteringAgeMultiplier']))
-                atpeParams['resultFilteringLossRankMultiplier'] = max(1.0, min(4.0, atpeParams['resultFilteringLossRankMultiplier']))
-                atpeParams['resultFilteringRandomProbability'] = max(0.7, min(0.9, atpeParams['resultFilteringRandomProbability']))
-                atpeParams['secondaryCorrelationExponent'] = max(1.0, min(3.0, atpeParams['secondaryCorrelationExponent']))
-                atpeParams['secondaryCorrelationMultiplier'] = max(0.2, min(1.8, atpeParams['secondaryCorrelationMultiplier']))
-                atpeParams['secondaryCutoff'] = max(-1.0, min(1.0, atpeParams['secondaryCutoff']))
-                atpeParams['secondaryFixedProbability'] = max(0.2, min(0.8, atpeParams['secondaryFixedProbability']))
-                atpeParams['secondaryTopLockingPercentile'] = max(0, min(10.0, atpeParams['secondaryTopLockingPercentile']))
+                    # Apply bounds to all the parameters
+                    if atpeParameter == 'gamma':
+                        atpeParams['gamma'] = max(0.2, min(2.0, atpeParams['gamma']))
+                    if atpeParameter == 'nEICandidates':
+                        atpeParams['nEICandidates'] = int(max(2.0, min(48, atpeParams['nEICandidates'])))
+                    if atpeParameter == 'resultFilteringAgeMultiplier':
+                        atpeParams['resultFilteringAgeMultiplier'] = max(1.0, min(4.0, atpeParams['resultFilteringAgeMultiplier']))
+                    if atpeParameter == 'resultFilteringLossRankMultiplier':
+                        atpeParams['resultFilteringLossRankMultiplier'] = max(1.0, min(4.0, atpeParams['resultFilteringLossRankMultiplier']))
+                    if atpeParameter == 'resultFilteringRandomProbability':
+                        atpeParams['resultFilteringRandomProbability'] = max(0.7, min(0.9, atpeParams['resultFilteringRandomProbability']))
+                    if atpeParameter == 'secondaryCorrelationExponent':
+                        atpeParams['secondaryCorrelationExponent'] = max(1.0, min(3.0, atpeParams['secondaryCorrelationExponent']))
+                    if atpeParameter == 'secondaryCorrelationMultiplier':
+                        atpeParams['secondaryCorrelationMultiplier'] = max(0.2, min(1.8, atpeParams['secondaryCorrelationMultiplier']))
+                    if atpeParameter == 'secondaryCutoff':
+                        atpeParams['secondaryCutoff'] = max(-1.0, min(1.0, atpeParams['secondaryCutoff']))
+                    if atpeParameter == 'secondaryFixedProbability':
+                        atpeParams['secondaryFixedProbability'] = max(0.2, min(0.8, atpeParams['secondaryFixedProbability']))
+                    if atpeParameter == 'secondaryTopLockingPercentile':
+                        atpeParams['secondaryTopLockingPercentile'] = max(0, min(10.0, atpeParams['secondaryTopLockingPercentile']))
 
                 # Now blank out unneeded params so they don't confuse us
                 if atpeParams['secondaryLockingMode'] == 'random':
