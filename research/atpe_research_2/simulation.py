@@ -394,7 +394,7 @@ class AlgorithmSimulation:
                 interactionsWeight = 0.0
                 for index, interaction in enumerate(interactionsForGroup):
                     if interaction['param1']['name'] == parameter[0]['name'] or interaction['param2']['name'] == parameter[0]['name']:
-                        computeScript += "        {0}_loss += interactions[{1}]({2}, {3} * {4})\n".format(parameter[0]['name'], str(index),
+                        computeScript += "        {0}_loss += interactions[{1}]({2}, {3}) * {4}\n".format(parameter[0]['name'], str(index),
                                                                                                                               getParamFetcher(interaction['param1']),
                                                                                                                               getParamFetcher(interaction['param2']), interaction['weight'])
                         interactionsWeight += interaction['weight']
