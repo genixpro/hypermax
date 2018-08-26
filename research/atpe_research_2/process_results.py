@@ -388,10 +388,11 @@ def mergeResults():
     # Convert everything to floats where possible
     for result in allResults:
         for key in result.keys():
-            try:
-                result[key] = float(result[key])
-            except ValueError:
-                pass
+            if result[key] is not None and result[key] != '':
+                try:
+                    result[key] = float(result[key])
+                except ValueError:
+                    pass
 
     # Filter out all results with a loss of 1.0. These results are meaningless for our dataset, since they are caused our random-failure noise, and not by actually searching the dataset
     allResults = [result for result in allResults if float(result['loss']) < 1.0]
@@ -607,7 +608,7 @@ def trainATPEModels():
         params = {
             'num_iterations': 250,
             'is_provide_training_metric': True,
-            "early_stopping_round": 3,
+            "early_stopping_round": 5,
             "feature_fraction": 0.90,
             "learning_rate": 0.05
         }
@@ -649,9 +650,9 @@ def trainATPEModels():
             with open('model-' + key + "-configuration.json", 'wt') as file:
                 json.dump({
                     "origStddev": origStddev,
-                    "origMean": origStddev,
+                    "origMean": origMean,
                     "predStddev": predStddev,
-                    "predMean": predMean,
+                    "predMean": predMean
                 }, file)
 
             def renormalize(value):
@@ -737,5 +738,5 @@ def trainATPEModels():
         for importance in importances:
             print("    ", importance[0], importance[1])
 
-# mergeResults()
+mergeResults()
 trainATPEModels()
