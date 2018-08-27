@@ -563,7 +563,7 @@ class Optimizer:
                                 if lockResult[secondary.name] is not None:
                                     lockedValues[secondary.name] = lockResult[secondary.name]
                             elif atpeParams['secondaryLockingMode'] == 'random':
-                                if 'rounding' in secondary['space']:
+                                if 'rounding' in secondary.config:
                                     lockedValues[secondary.name] = round(random.uniform(secondary.config['min'], secondary.config['max']) / secondary.config['rounding']) * secondary.config['rounding']
                                 else:
                                     lockedValues[secondary.name] = random.uniform(secondary.config['min'], secondary.config['max'])
