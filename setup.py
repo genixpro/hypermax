@@ -32,6 +32,7 @@ setup(
         'pyyaml',
         'urwid',
         'panwid',
+        'lightgbm',
         'psutil',
         'matplotlib',
         'colors.py'
