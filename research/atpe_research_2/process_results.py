@@ -51,7 +51,7 @@ predictorKeyCascadeOrdering = [
 
 atpeParameterPredictionStandardDeviationRatio = {
     'gamma': 0.9,
-    'nEICandidates': 0.5,
+    'nEICandidates': 0.8,
     'resultFilteringAgeMultiplier': 1.0,
     'resultFilteringLossRankMultiplier': 1.0,
     'resultFilteringRandomProbability': 1.0,
@@ -59,7 +59,10 @@ atpeParameterPredictionStandardDeviationRatio = {
     'secondaryCorrelationMultiplier': 1.0,
     'secondaryCutoff': 0.9,
     'secondaryFixedProbability': 1.0,
-    'secondaryTopLockingPercentile': 1.0
+    'secondaryTopLockingPercentile': 1.0,
+    'resultFilteringMode': 2.2,
+    'secondaryLockingMode': 1.5,
+    'secondaryProbabilityMode': 2.0
 }
 
 # Custom params on per atpe param basis for training the lightgbm models
@@ -607,10 +610,10 @@ def trainATPEModels():
         allFeatureNames = trainingData.feature_name
 
         params = {
-            'num_iterations': 250,
+            'num_iterations': 100,
             'is_provide_training_metric': True,
             "early_stopping_round": 5,
-            "feature_fraction": 0.90,
+            "feature_fraction": 0.85,
             "learning_rate": 0.05
         }
 
@@ -638,15 +641,28 @@ def trainATPEModels():
             origStddev = numpy.std([float(result[key]) for result in training if result[key] is not None and result[key] != ''])
             origMean = numpy.mean([float(result[key]) for result in training if result[key] is not None and result[key] != ''])
 
-            trainingPredicted = []
+            vectors = []
             for result in training:
                 vector = []
                 for feature in featureKeys:
                     vector.append(result[feature])
-                trainingPredicted.append(float(model.predict([vector])[0]))
+                for atpeParamFeature in atpeParamFeatures:
+                    if atpeParamFeature in result and result[atpeParamFeature] is not None and result[atpeParamFeature] != '':
+                        if atpeParamFeature in atpeParameterValues:
+                            for value in atpeParameterValues[atpeParamFeature]:
+                                vector.append(1.0 if result[atpeParamFeature] == value else 0)
+                        else:
+                            vector.append(float(result[atpeParamFeature]))
+                    else:
+                        vector.append(-3) # We use -3 because none of our atpe parameters ever take this value, so it acts as our signal that this parameter is unfilled
+                vectors.append(vector)
 
-            predStddev = numpy.std(trainingPredicted) / atpeParameterPredictionStandardDeviationRatio[key]
+            trainingPredicted = model.predict(numpy.array(vectors))
+
+            predStddev = numpy.std(trainingPredicted)
             predMean = numpy.mean(trainingPredicted)
+
+            origStddev = origStddev * atpeParameterPredictionStandardDeviationRatio[key]
 
             with open('model-' + key + "-configuration.json", 'wt') as file:
                 json.dump({
@@ -696,12 +712,67 @@ def trainATPEModels():
             print("Average L1 Error:", totalL1Error/totalCount)
             print("Average Normalized L1 Error:", totalL1NormalizedError/totalCount)
         else:
+            # Now we have to determine the adjustment factor for each of the class decisions. Because the dataset is very noisy,
+            # our output probabilities tend to be very close to 0.25. Lets renormalize them so we can use them for stochastic
+            # selection.
+            values = atpeParameterValues[key]
+            origMeans = {}
+            origStddevs = {}
+            for value in values:
+                origMean = numpy.mean([(1.0 if result[key] == value else 0) for result in training if result[key] is not None and result[key] != ''])
+                origStddev = numpy.std([(1.0 if result[key] == value else 0) for result in training if result[key] is not None and result[key] != ''])
+                origMeans[value] = origMean
+                origStddevs[value] = origStddev * atpeParameterPredictionStandardDeviationRatio[key]
+
+            vectors = []
+            for result in training:
+                vector = []
+                for feature in featureKeys:
+                    vector.append(result[feature])
+                for atpeParamFeature in atpeParamFeatures:
+                    if atpeParamFeature in result and result[atpeParamFeature] is not None and result[atpeParamFeature] != '':
+                        if atpeParamFeature in atpeParameterValues:
+                            for value in atpeParameterValues[atpeParamFeature]:
+                                vector.append(1.0 if result[atpeParamFeature] == value else 0)
+                        else:
+                            vector.append(float(result[atpeParamFeature]))
+                    else:
+                        vector.append(-3)  # We use -3 because none of our atpe parameters ever take this value, so it acts as our signal that this parameter is unfilled
+                vectors.append(vector)
+
+            trainingPredicted = model.predict(numpy.array(vectors))
+            trainingPredicted = numpy.array(trainingPredicted)
+
+            predMeans = {}
+            predStddevs = {}
+            for valueIndex, value in enumerate(values):
+                predMean = numpy.mean(trainingPredicted[:, valueIndex])
+                predStddev = numpy.std(trainingPredicted[:, valueIndex])
+                predMeans[value] = predMean
+                predStddevs[value] = predStddev
+
+            with open('model-' + key + "-configuration.json", 'wt') as file:
+                json.dump({
+                    "origStddevs": origStddevs,
+                    "origMeans": origMeans,
+                    "predStddevs": predStddevs,
+                    "predMeans": predMeans
+                }, file)
+
+
+            def renormalize(predictedClasses):
+                predictedClasses = copy.copy(predictedClasses)
+                for valueIndex, value in enumerate(values):
+                    predictedClasses[valueIndex] = (((predictedClasses[valueIndex] - predMeans[value]) / predStddevs[value]) * origStddevs[value]) + origMeans[value]
+                    predictedClasses[valueIndex] = max(0, min(1.0, predictedClasses[valueIndex]))
+                return predictedClasses
+
             totalCorrect = 0
             totalCount = 0
             with open('predictions-' + key + '.csv', 'wt') as file:
                 writer = csv.DictWriter(file, fieldnames=[key, key + "_predicted", key + "_correct"])
                 writer.writeheader()
-                for result in testing:
+                for resultIndex, result in enumerate(testing):
                     vector = []
                     for feature in featureKeys:
                         vector.append(float(result[feature]))
@@ -713,13 +784,11 @@ def trainATPEModels():
                             else:
                                 vector.append(float(result[atpeParamFeature]))
                         else:
-                            vector.append(-3) # We use -3 because none of our atpe parameters ever take this value
+                            vector.append(-3) # We use -3 because none of our atpe parameters ever take this value, so it acts as our signal that this parameter is unfilled
 
-                    predicted = atpeParameterValues[key][int(numpy.argmax(model.predict([vector])[0]))]
+                    predictedClasses = model.predict([vector])[0]
+                    predicted = atpeParameterValues[key][int(numpy.argmax(predictedClasses))]
                     correct = (predicted == result[key])
-
-                    probabilities = model.predict([vector])[0]*100
-                    # print(probabilities)
 
                     totalCount += 1
                     if correct:
@@ -732,12 +801,11 @@ def trainATPEModels():
                     })
             print("Accuracy:", str(totalCorrect * 100 / totalCount), "%")
 
-
         importances = zip(allFeatureNames, model.feature_importance())
         importances = sorted(importances, key=lambda r:-r[1])
         print(key)
         for importance in importances:
             print("    ", importance[0], importance[1])
 
-mergeResults()
+# mergeResults()
 trainATPEModels()
