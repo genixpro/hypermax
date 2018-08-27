@@ -205,7 +205,11 @@ class Execution:
             output = ''
             while process.returncode is None and "loss" not in output and 'no process found' not in output:
                 process.poll()
-                output += str(process.stdout.read(1), 'utf8')
+                nextChar = str(process.stdout.read(1), 'utf8')
+                if nextChar == chr(127):
+                    output = output[:-1] # Erase the last character from the output.
+                else:
+                    output += nextChar
                 # print(output)
                 try:
                     if self.shouldKillProcess():
@@ -217,7 +221,7 @@ class Execution:
                             p.send_signal(9)
                 except psutil.NoSuchProcess:
                     pass
-                time.sleep(0.1)
+                time.sleep(0.02)
 
             if self.killed:
                 output = str(process.stdout.read(), 'utf8')
