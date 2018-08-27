@@ -55,7 +55,7 @@ atpeParameterPredictionStandardDeviationRatio = {
     'resultFilteringAgeMultiplier': 1.0,
     'resultFilteringLossRankMultiplier': 1.0,
     'resultFilteringRandomProbability': 1.0,
-    'secondaryCorrelationExponent': 0.7,
+    'secondaryCorrelationExponent': 1.0,
     'secondaryCorrelationMultiplier': 1.0,
     'secondaryCutoff': 0.9,
     'secondaryFixedProbability': 1.0,
@@ -253,30 +253,31 @@ def extractResultsFromLogs():
     for dir in dirs:
         if 'run' not in dir:
             continue
-        with open(os.path.join(dir, 'hypermax', 'nohup.out'), 'rt') as file:
-            text = file.read()
+        if os.path.exists(os.path.join(dir, 'hypermax', 'nohup.out')):
+            with open(os.path.join(dir, 'hypermax', 'nohup.out'), 'rt') as file:
+                text = file.read()
 
-            fails = []
-            results = []
+                fails = []
+                results = []
 
-            # Extract each of the results out of the log files
-            start = text.find('{')
-            while start != -1:
-                end = text.find('}', start)
-                result = text[start:end + 1]
-                result = result.replace('\'', '"')
-                result = result.replace('None', 'null')
-                try:
-                    data = json.loads(result)
-                    data['run'] = dir
-                    results.append(preprocessResult(data))
-                except Exception:
-                    fails.append(result)
-                    # traceback.print_exc()
-                start = text.find('{', end)
+                # Extract each of the results out of the log files
+                start = text.find('{')
+                while start != -1:
+                    end = text.find('}', start)
+                    result = text[start:end + 1]
+                    result = result.replace('\'', '"')
+                    result = result.replace('None', 'null')
+                    try:
+                        data = json.loads(result)
+                        data['run'] = dir
+                        results.append(preprocessResult(data))
+                    except Exception:
+                        fails.append(result)
+                        # traceback.print_exc()
+                    start = text.find('{', end)
 
-            allResults = allResults + results
-            allFails = allFails + fails
+                allResults = allResults + results
+                allFails = allFails + fails
     return allResults
 
 
