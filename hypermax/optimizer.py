@@ -239,10 +239,9 @@ class Optimizer:
                 file.write(modelData)
                 self.parameterModels[param] = lightgbm.Booster(model_file=file.name)
 
-            if param not in self.atpeParameterValues:
-                configString = pkg_resources.resource_string(__name__, "atpe_models/model-" + param + '-configuration.json')
-                data = json.loads(configString)
-                self.parameterModelConfigurations[param] = data
+            configString = pkg_resources.resource_string(__name__, "atpe_models/model-" + param + '-configuration.json')
+            data = json.loads(configString)
+            self.parameterModelConfigurations[param] = data
 
         self.lastATPEParameters = None
         self.atpeParamDetails = None
@@ -373,8 +372,15 @@ class Optimizer:
 
                     # Set the value
                     if atpeParameter in self.atpeParameterValues:
-                        chosen = numpy.argmax(value)
-                        atpeParams[atpeParameter] = self.atpeParameterValues[atpeParameter][chosen]
+                        # Renormalize the predicted probabilities
+                        config = self.parameterModelConfigurations[atpeParameter]
+                        for atpeParamValueIndex, atpeParamValue in enumerate(self.atpeParameterValues[atpeParameter]):
+                            value[atpeParamValueIndex] = (((value[atpeParamValueIndex] - config['predMeans'][atpeParamValue]) / config['predStddevs'][atpeParamValue]) * config['origStddevs'][atpeParamValue]) + config['origMeans'][atpeParamValue]
+                            value[atpeParamValueIndex] = max(0.01, min(1.0, value[atpeParamValueIndex]))
+                        # Make a random weighted choice based on the normalized probabilities
+                        probabilities = value / numpy.sum(value)
+                        chosen = numpy.random.choice(a=self.atpeParameterValues[atpeParameter], p=probabilities)
+                        atpeParams[atpeParameter] = str(chosen)
                     else:
                         # Renormalize the predictions
                         config = self.parameterModelConfigurations[atpeParameter]
@@ -624,10 +630,10 @@ class Optimizer:
             else:
                 result['status'] = 'ok'
 
-            if 'log' in modelResult:
-                result['log'] = modelResult['log']
-            else:
-                result['log'] = ''
+            # if 'log' in modelResult:
+            #     result['log'] = modelResult['log']
+            # else:
+            result['log'] = ''
 
             if 'error' in modelResult:
                 result['error'] = modelResult['error']
