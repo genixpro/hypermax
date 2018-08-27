@@ -31,11 +31,11 @@ atpeParameterKeys = [
     'secondaryTopLockingPercentile',
 ]
 
-# We cascade the predictions - feeding prior predictions into the next one. There is a specific ordering to it, in order to help regularize the model based on the way our results were sampled
+# We cascade the predictions - feeding prior predictions into the next one. There is a specific ordering to it, in order to help regularize the model based on the way our results were sampled and how ATPE is supposed to work at runtime
 predictorKeyCascadeOrdering = [
     'resultFilteringMode',
-    'secondaryLockingMode',
     'secondaryProbabilityMode',
+    'secondaryLockingMode',
     'resultFilteringAgeMultiplier',
     'resultFilteringLossRankMultiplier',
     'resultFilteringRandomProbability',

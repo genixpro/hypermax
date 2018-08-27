@@ -1,6 +1,7 @@
 import hyperopt
 import csv
 import json
+import traceback
 import os.path
 from pprint import pprint
 import datetime
@@ -58,8 +59,8 @@ class Optimizer:
 
     atpeParameterCascadeOrdering = [
         'resultFilteringMode',
-        'secondaryLockingMode',
         'secondaryProbabilityMode',
+        'secondaryLockingMode',
         'resultFilteringAgeMultiplier',
         'resultFilteringLossRankMultiplier',
         'resultFilteringRandomProbability',
@@ -619,7 +620,13 @@ class Optimizer:
         availableWorkers = list(sorted(self.allWorkers.difference(self.occupiedWorkers)))
 
         sampleWorker = availableWorkers[0]
-        sample = self.sampleNext()
+        sample = None
+        while sample is None:
+            # Hedge against any exceptions in the atpe optimizer.
+            try:
+                sample = self.sampleNext()
+            except Exception:
+                traceback.print_exc()
 
         def testSample(params, trial, worker):
             currentTrial = {
