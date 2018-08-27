@@ -376,7 +376,7 @@ class Optimizer:
                         config = self.parameterModelConfigurations[atpeParameter]
                         for atpeParamValueIndex, atpeParamValue in enumerate(self.atpeParameterValues[atpeParameter]):
                             value[atpeParamValueIndex] = (((value[atpeParamValueIndex] - config['predMeans'][atpeParamValue]) / config['predStddevs'][atpeParamValue]) * config['origStddevs'][atpeParamValue]) + config['origMeans'][atpeParamValue]
-                            value[atpeParamValueIndex] = max(0.01, min(1.0, value[atpeParamValueIndex]))
+                            value[atpeParamValueIndex] = max(0.15, min(1.0, value[atpeParamValueIndex]))
                         # Make a random weighted choice based on the normalized probabilities
                         probabilities = value / numpy.sum(value)
                         chosen = numpy.random.choice(a=self.atpeParameterValues[atpeParameter], p=probabilities)
