@@ -462,7 +462,10 @@ class Optimizer:
             # We set a minimum cutoff at 0.3 so that it will actually try some cracking some parameters when in this mode.
             # This ensures we never stop exploring, even when at the global optimium.
             if atpeParams['secondaryLockingMode'] == 'random':
-                if atpeParams['secondaryCutoff'] < 0:
+                # If we are very close to the mean, we will try optimizing either highly correlated or less correlated parameters.
+                if atpeParams['secondaryCutoff'] > -0.15 and atpeParams['secondaryCutoff'] < 0.15:
+                    atpeParams['secondaryCutoff'] = random.choice([-0.3, 0.3])
+                elif atpeParams['secondaryCutoff'] < 0:
                     atpeParams['secondaryCutoff'] = min(-0.3, atpeParams['secondaryCutoff'])
                 elif atpeParams['secondaryCutoff'] > 0:
                     atpeParams['secondaryCutoff'] = max(0.3, atpeParams['secondaryCutoff'])
