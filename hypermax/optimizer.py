@@ -376,7 +376,12 @@ class Optimizer:
                         config = self.parameterModelConfigurations[atpeParameter]
                         for atpeParamValueIndex, atpeParamValue in enumerate(self.atpeParameterValues[atpeParameter]):
                             value[atpeParamValueIndex] = (((value[atpeParamValueIndex] - config['predMeans'][atpeParamValue]) / config['predStddevs'][atpeParamValue]) * config['origStddevs'][atpeParamValue]) + config['origMeans'][atpeParamValue]
-                            value[atpeParamValueIndex] = max(0.15, min(1.0, value[atpeParamValueIndex]))
+                            value[atpeParamValueIndex] = max(0.0, min(1.0, value[atpeParamValueIndex]))
+
+                        maxVal = numpy.max(value)
+                        for atpeParamValueIndex, atpeParamValue in enumerate(self.atpeParameterValues[atpeParameter]):
+                            value[atpeParamValueIndex] = max(value[atpeParamValueIndex], maxVal * 0.15) # We still allow the non reccomended modes to get chosen 15% of the time
+
                         # Make a random weighted choice based on the normalized probabilities
                         probabilities = value / numpy.sum(value)
                         chosen = numpy.random.choice(a=self.atpeParameterValues[atpeParameter], p=probabilities)
@@ -452,6 +457,15 @@ class Optimizer:
                         del atpeParamDetails[atpeParameter]
                     else:
                         atpeParamDetails[atpeParameter]['value'] = atpeParams[atpeParameter]
+
+            # If we are in local-minimum cracking mode, make sure we don't just set cutoff to 0.0 and not do any minimum cracking
+            # We set a minimum cutoff at 0.3 so that it will actually try some cracking some parameters when in this mode.
+            # This ensures we never stop exploring, even when at the global optimium.
+            if atpeParams['secondaryLockingMode'] == 'random':
+                if atpeParams['secondaryCutoff'] < 0:
+                    atpeParams['secondaryCutoff'] = min(-0.3, atpeParams['secondaryCutoff'])
+                elif atpeParams['secondaryCutoff'] > 0:
+                    atpeParams['secondaryCutoff'] = max(0.3, atpeParams['secondaryCutoff'])
 
             self.lastATPEParameters = atpeParams
             self.atpeParamDetails = atpeParamDetails
