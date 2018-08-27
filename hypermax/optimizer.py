@@ -626,7 +626,8 @@ class Optimizer:
             try:
                 sample = self.sampleNext()
             except Exception:
-                traceback.print_exc()
+                #traceback.print_exc()
+                pass
 
         def testSample(params, trial, worker):
             currentTrial = {
