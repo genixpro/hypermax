@@ -551,10 +551,23 @@ class Optimizer:
                                 if lockResult[secondary.name] is not None:
                                     lockedValues[secondary.name] = lockResult[secondary.name]
                             elif atpeParams['secondaryLockingMode'] == 'random':
+                                minVal = secondary.config['min']
+                                maxVal = secondary.config['max']
+
+                                if secondary.config.get('scaling', 'linear') == 'logarithmic':
+                                    minVal = math.log(minVal)
+                                    maxVal = math.log(maxVal)
+
+                                value = random.uniform(minVal, maxVal)
+
+                                if secondary.config.get('scaling', 'linear') == 'logarithmic':
+                                    value = math.exp(value)
+
                                 if 'rounding' in secondary.config:
-                                    lockedValues[secondary.name] = round(random.uniform(secondary.config['min'], secondary.config['max']) / secondary.config['rounding']) * secondary.config['rounding']
-                                else:
-                                    lockedValues[secondary.name] = random.uniform(secondary.config['min'], secondary.config['max'])
+                                    value = round(value / secondary.config['rounding']) * secondary.config['rounding']
+
+                                lockedValues[secondary.name] = value
+
                     elif atpeParams['secondaryProbabilityMode'] == 'correlation':
                         probability = max(0, min(1, abs(correlations[secondary.name]) * atpeParams['secondaryCorrelationMultiplier']))
                         if random.uniform(0, 1) < probability:
@@ -563,10 +576,22 @@ class Optimizer:
                                 if lockResult[secondary.name] is not None:
                                     lockedValues[secondary.name] = lockResult[secondary.name]
                             elif atpeParams['secondaryLockingMode'] == 'random':
+                                minVal = secondary.config['min']
+                                maxVal = secondary.config['max']
+
+                                if secondary.config.get('scaling', 'linear') == 'logarithmic':
+                                    minVal = math.log(minVal)
+                                    maxVal = math.log(maxVal)
+
+                                value = random.uniform(minVal, maxVal)
+
+                                if secondary.config.get('scaling', 'linear') == 'logarithmic':
+                                    value = math.exp(value)
+
                                 if 'rounding' in secondary.config:
-                                    lockedValues[secondary.name] = round(random.uniform(secondary.config['min'], secondary.config['max']) / secondary.config['rounding']) * secondary.config['rounding']
-                                else:
-                                    lockedValues[secondary.name] = random.uniform(secondary.config['min'], secondary.config['max'])
+                                    value = round(value / secondary.config['rounding']) * secondary.config['rounding']
+
+                                lockedValues[secondary.name] = value
 
                 # Now last step, we filter results prior to sending them into ATPE
                 for resultIndex, result in enumerate(self.results):
