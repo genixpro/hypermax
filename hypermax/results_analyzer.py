@@ -393,6 +393,7 @@ class ResultsAnalyzer:
 
         fig.set_tight_layout(True)
         fig.savefig(fileName, dpi=200)
+        plt.close(fig)
 
     @handleChartException
     def exportLossMatrixToCSV(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, reduction='min'):
@@ -524,6 +525,7 @@ class ResultsAnalyzer:
         ax.set_title(title + " of " + parameter1.root[5:] + " vs " + parameter2.root[5:], fontdict={"fontsize": 10})
         fig.set_tight_layout(True)
         fig.savefig(fileName, dpi=200)
+        plt.close(fig)
 
 
     @handleChartException
@@ -582,6 +584,7 @@ class ResultsAnalyzer:
 
         fig.set_tight_layout(True)
         fig.savefig(fileName, dpi=200)
+        plt.close(fig)
 
     @handleChartException
     def exportSingleParameterLossCSV(self, fileName, results, parameter, valueKey='loss', numBuckets=None, reduction='mean'):
