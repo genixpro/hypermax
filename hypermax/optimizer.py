@@ -669,6 +669,9 @@ class Optimizer:
 
             result = {}
             result['trial'] = trial
+            self.resultsAnalyzer.makeDirs(os.path.join(self.resultsAnalyzer.directory, "logs"))
+
+
 
             if 'loss' in modelResult:
                 result['loss'] = modelResult['loss']
@@ -680,10 +683,13 @@ class Optimizer:
             else:
                 result['status'] = 'ok'
 
-            # if 'log' in modelResult:
-            #     result['log'] = modelResult['log']
-            # else:
-            result['log'] = ''
+            if 'log' in modelResult:
+                fileName = os.path.join(self.resultsAnalyzer.directory, "logs", "trial_" + str(trial) + ".txt")
+                with open(fileName, "wt") as file:
+                    file.write(modelResult['log'])
+                result['log'] = fileName
+            else:
+                result['log'] = ''
 
             if 'error' in modelResult:
                 result['error'] = modelResult['error']

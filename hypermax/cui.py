@@ -31,6 +31,14 @@ class ScrollableDataTable(DataTable):
         else:
             self.keepColumns = ['index']
 
+        if 'rowClickCallback' in kwargs:
+            self.rowClickCallback = kwargs['rowClickCallback']
+            del kwargs['rowClickCallback']
+        else:
+            self.rowClickCallback = None
+
+        self.localRows = []
+
         super(ScrollableDataTable, self).__init__(*args, **kwargs)
 
         self.columnPos = 0
@@ -49,6 +57,8 @@ class ScrollableDataTable(DataTable):
 
             self.toggle_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index >= self.columnPos], show=False)
             self.toggle_columns([column.name for index, column in enumerate(c for c in self.columns if c.name not in self.keepColumns) if index < self.columnPos], show=True)
+        elif key =='enter' and self.rowClickCallback!=None:
+            self.rowClickCallback(self.localRows[self.focus_position])
         else:
             super(ScrollableDataTable, self).keypress(widget, key)
 
@@ -188,6 +198,7 @@ class PopupContainer(urwid.PopUpLauncher):
 
     def get_pop_up_parameters(self):
         return {'left':0, 'top':0, 'overlay_width':('relative', 100.0), 'overlay_height':('relative', 100.0)}
+
 
 
 
@@ -347,6 +358,10 @@ def launchHypermaxUI(optimizer):
     tableResultsSize = 0
     def makeTrialsView():
         nonlocal trialsTable
+        def displayTrialDetails(currentTrial):
+            popupContainer.open_pop_up_with_widget(MessagePopup(json.dumps(currentTrial, indent=4)),
+                                                   size=(('relative', 95), ('relative', 95)))
+
         # listbox = urwid.ListBox(trialsList)
 
         columns = [
@@ -390,7 +405,7 @@ def launchHypermaxUI(optimizer):
                             # footer_fn=lambda column, values: sum(v for v in values if v is not None)),
                             ))
 
-        trialsTable = ScrollableDataTable(columns=columns, data=[{}], keepColumns=['trial', 'loss', 'time'])
+        trialsTable = ScrollableDataTable(columns=columns, data=[{}], keepColumns=['trial', 'loss', 'time'],rowClickCallback=displayTrialDetails)
 
         return makeMountedFrame(urwid.AttrWrap(trialsTable, 'body'), 'Trials')
 
@@ -559,6 +574,7 @@ def launchHypermaxUI(optimizer):
                     trialsTable.append_rows(newResults)
                     trialsTable.apply_filters()
                     tableResultsSize += len(resultsToAdd)
+                trialsTable.localRows = optimizer.results
 
             if len(optimizer.results) > 1:
                 allResults = numpy.array([result['loss'] for result in optimizer.results if isinstance(result['loss'], float)])

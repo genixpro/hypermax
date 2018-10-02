@@ -28,6 +28,8 @@ def trainModel(params):
 
     finishTime = datetime.now()
 
-    return {"accuracy": accuracy/total, "time": (finishTime - startTime).total_seconds()}
+    result = {"accuracy": accuracy/total, "time": (finishTime - startTime).total_seconds()}
+    print(result)
+    return result
 
 
