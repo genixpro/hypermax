@@ -1,4 +1,5 @@
 import urwid
+import urwid.html_fragment
 
 from pprint import pformat
 import numpy
@@ -187,6 +188,24 @@ class PopupContainer(urwid.PopUpLauncher):
 
     def get_pop_up_parameters(self):
         return {'left':0, 'top':0, 'overlay_width':('relative', 100.0), 'overlay_height':('relative', 100.0)}
+
+
+
+class ScrollableTextArea(urwid.WidgetWrap):
+    signals = ['close']
+
+    """A text area with fixed contents that can be scrolled."""
+    def __init__(self):
+        self.content = []
+
+        self.listWalker = urwid.SimpleFocusListWalker(self.content)
+        self.listbox = urwid.ListBox(self.listWalker)
+
+
+        super(ScrollableTextArea, self).__init__(self.listbox)
+
+    def setText(self, text):
+        pass
 
 
 def launchHypermaxUI(optimizer):
@@ -464,6 +483,8 @@ def launchHypermaxUI(optimizer):
             keys = loop.input_filter(keys, raw)
             if keys:
                 loop.process_input(keys)
+            if 'window resize' in keys:
+                loop.screen_size = None
 
 
             currentTrialsLeftText = ""

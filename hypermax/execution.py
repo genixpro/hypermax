@@ -130,11 +130,11 @@ class Execution:
             atexit.register(lambda: process.kill())
 
             # Set process affinities - hypermax in one, the model in the rest. Prevents them from causing cache conflicts.
-            if psutil.cpu_count() > 2:
-                processUtil = psutil.Process(process.pid)
-                processUtil.cpu_affinity([k for k in range(psutil.cpu_count() - 1)])
-                processUtil = psutil.Process(os.getpid())
-                processUtil.cpu_affinity([psutil.cpu_count() - 1])
+            # if psutil.cpu_count() > 2:
+            #     processUtil = psutil.Process(process.pid)
+            #     processUtil.cpu_affinity([k for k in range(psutil.cpu_count())])
+                # processUtil = psutil.Process(os.getpid())
+                # processUtil.cpu_affinity([psutil.cpu_count() - 1])
 
             self.process = process
             self.startTime = datetime.datetime.now()
