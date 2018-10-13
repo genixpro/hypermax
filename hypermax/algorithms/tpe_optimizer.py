@@ -1,0 +1,31 @@
+from .optimization_algorithm_base import OptimizationAlgorithmBase
+import hyperopt
+import functools
+import random
+import numpy
+import numpy.random
+from hypermax.hyperparameter import Hyperparameter
+
+class TPEOptimizer(OptimizationAlgorithmBase):
+
+    def recommendNextParameters(self, hyperparameterSpace, pastResults):
+        rstate = numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))
+
+        trials = self.convertResultsToTrials(hyperparameterSpace, pastResults)
+
+        space = Hyperparameter(hyperparameterSpace).createHyperoptSpace({})
+
+        params = {}
+        def sample(parameters):
+            nonlocal params
+            params = parameters
+            return {"loss": 0.5, 'status': 'ok'}
+
+        hyperopt.fmin(fn=sample,
+                      space=space,
+                      algo=functools.partial(hyperopt.tpe.suggest, n_EI_candidates=24, gamma=0.25),
+                      max_evals=1,
+                      trials=trials,
+                      rstate=rstate)
+        return params
+

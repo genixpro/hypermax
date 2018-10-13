@@ -224,7 +224,7 @@ class Execution:
                 time.sleep(0.02)
 
             if self.killed:
-                output = str(process.stdout.read(), 'utf8')
+                output += str(process.stdout.read(), 'utf8')
                 self.result = {"status": "fail", "loss": self.config['auto_kill_loss'], "log": output, "error": "Model was automatically killed.",
                                "time": (datetime.datetime.now() - self.startTime).total_seconds()}
                 self.process = None
