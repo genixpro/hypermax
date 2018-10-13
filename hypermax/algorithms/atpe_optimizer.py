@@ -205,8 +205,9 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
 
         parameters = Hyperparameter(hyperparameterSpace).getFlatParameters()
 
-        # Remove any locked values from ones the optimizer will examine
-        parameters = list(filter(lambda key: key not in lockedValues.keys(), parameters))
+        if lockedValues is not None:
+            # Remove any locked values from ones the optimizer will examine
+            parameters = list(filter(lambda key: key not in lockedValues.keys(), parameters))
 
         initializationRounds = 10
 

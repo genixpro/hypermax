@@ -203,7 +203,7 @@ class Execution:
         if self.config['type'] == 'python_function' or self.config['type'] == 'remote':
             process = self.startSubprocess()
             output = ''
-            while process.returncode is None and "loss" not in output and 'no process found' not in output:
+            while process.returncode is None and 'no process found' not in output:
                 process.poll()
                 nextChar = str(process.stdout.read(1), 'utf8')
                 if nextChar == chr(127):
