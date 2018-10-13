@@ -194,7 +194,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         self.atpeParamDetails = None
 
 
-    def recommendNextParameters(self, hyperparameterSpace, results):
+    def recommendNextParameters(self, hyperparameterSpace, results, lockedValues=None):
         rstate = numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))
 
         params = {}
@@ -204,6 +204,9 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
             return {"loss": 0.5, 'status': 'ok'}
 
         parameters = Hyperparameter(hyperparameterSpace).getFlatParameters()
+
+        # Remove any locked values from ones the optimizer will examine
+        parameters = list(filter(lambda key: key not in lockedValues.keys(), parameters))
 
         initializationRounds = 10
 
@@ -441,7 +444,13 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         else:
             maxLoss = numpy.max([result['loss'] for result in results if result['loss'] is not None])
 
-        lockedValues = {}
+        # We create a copy of lockedValues so we don't modify the object that was passed in as an argument - treat it as immutable.
+        # The ATPE algorithm will lock additional values in a stochastic manner
+        if lockedValues is None:
+            lockedValues = {}
+        else:
+            lockedValues = copy.copy(lockedValues)
+
         filteredResults = []
         removedResults = []
         if len(results) > initializationRounds:

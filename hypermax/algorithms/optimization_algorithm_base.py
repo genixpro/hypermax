@@ -16,7 +16,7 @@ class OptimizationAlgorithmBase:
         'error'
     ]
 
-    def recommendNextParameters(self, hyperparameterSpace, pastResults):
+    def recommendNextParameters(self, hyperparameterSpace, results, lockedValues=None):
         pass
 
 

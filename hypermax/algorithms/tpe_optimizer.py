@@ -8,12 +8,15 @@ from hypermax.hyperparameter import Hyperparameter
 
 class TPEOptimizer(OptimizationAlgorithmBase):
 
-    def recommendNextParameters(self, hyperparameterSpace, pastResults):
+    def recommendNextParameters(self, hyperparameterSpace, results, lockedValues=None):
+        if lockedValues is None:
+            lockedValues = {}
+
         rstate = numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))
 
-        trials = self.convertResultsToTrials(hyperparameterSpace, pastResults)
+        trials = self.convertResultsToTrials(hyperparameterSpace, results)
 
-        space = Hyperparameter(hyperparameterSpace).createHyperoptSpace({})
+        space = Hyperparameter(hyperparameterSpace).createHyperoptSpace(lockedValues)
 
         params = {}
         def sample(parameters):
