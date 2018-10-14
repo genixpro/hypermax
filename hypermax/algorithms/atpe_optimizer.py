@@ -374,18 +374,6 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                 else:
                     atpeParamDetails[atpeParameter]['value'] = atpeParams[atpeParameter]
 
-        # If we are in local-minimum cracking mode, make sure we don't just set cutoff to 0.0 and not do any minimum cracking
-        # We set a minimum cutoff at 0.5 so that it will actually try some cracking some parameters when in this mode.
-        # This ensures we never stop exploring all the parameters, even when at the global optimium.
-        if atpeParams['secondaryLockingMode'] == 'random':
-            # If we are very close to the mean, we will try optimizing either highly correlated or less correlated parameters.
-            if atpeParams['secondaryCutoff'] > -0.25 and atpeParams['secondaryCutoff'] < 0.25:
-                atpeParams['secondaryCutoff'] = random.choice([-0.5, 0.5])
-            elif atpeParams['secondaryCutoff'] < 0:
-                atpeParams['secondaryCutoff'] = min(-0.5, atpeParams['secondaryCutoff'])
-            elif atpeParams['secondaryCutoff'] > 0:
-                atpeParams['secondaryCutoff'] = max(0.5, atpeParams['secondaryCutoff'])
-
         self.lastATPEParameters = atpeParams
         self.atpeParamDetails = atpeParamDetails
 
@@ -440,7 +428,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
 
             return primaryParameters + otherParameters, secondaryParameters, correlations
 
-        if len(results) == 0:
+        if len([result['loss'] for result in results if result['loss'] is not None]) == 0:
             maxLoss = 1
         else:
             maxLoss = numpy.max([result['loss'] for result in results if result['loss'] is not None])
