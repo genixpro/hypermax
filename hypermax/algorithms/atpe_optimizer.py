@@ -551,6 +551,8 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         percentile75Loss = 0
         statistics = {}
 
+        numpy.warnings.filterwarnings('ignore')
+
         if len(set(losses)) > 1:
             bestLoss = numpy.percentile(losses, 0)
             percentile5Loss = numpy.percentile(losses, 5)
@@ -607,7 +609,10 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                             valueLosses.append(result['loss'])
 
                     correlation = abs(scipy.stats.spearmanr(values, valueLosses)[0])
-                    correlations.append(correlation)
+                    if math.isnan(correlation) or math.isinf(correlation):
+                        correlations.append(0)
+                    else:
+                        correlations.append(correlation)
 
         correlations = numpy.array(correlations)
 
