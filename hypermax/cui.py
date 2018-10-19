@@ -177,7 +177,9 @@ class HumanGuidancePopup(urwid.WidgetWrap):
         self.optimizer = optimizer
         self.guidanceOptions = copy.deepcopy(optimizer.humanGuidedATPEOptimizer.guidanceOptions)
 
-        self.parameterEdits = {}
+        self.parameterLockedValueEdits = {}
+        self.parameterMinEdits = {}
+        self.parameterMaxEdits = {}
         self.statusLabels = {}
 
         self.listWalker = urwid.SimpleListWalker(self.generateGrid())
@@ -208,8 +210,20 @@ class HumanGuidancePopup(urwid.WidgetWrap):
         else:
             best = urwid.Text("Not in best")
 
+        minEdit = urwid.Edit()
+        minLabel = urwid.Text("Min")
+        maxEdit = urwid.Edit()
+        maxLabel = urwid.Text("Max")
+        minEdit.set_edit_text(str(parameter.config['min']))
+        maxEdit.set_edit_text(str(parameter.config['max']))
+        rangeArea = urwid.Columns([minLabel,minEdit,maxLabel,maxEdit])
+        self.parameterMinEdits[parameter.name] = minEdit
+        self.parameterMaxEdits[parameter.name] = maxEdit
+        urwid.connect_signal(minEdit, 'postchange', lambda button, value: self.updateMin(parameter))
+        urwid.connect_signal(maxEdit, 'postchange', lambda button, value: self.updateMax(parameter))
+
         edit = None
-        self.parameterEdits[parameter.name] = urwid.Edit()
+        self.parameterLockedValueEdits[parameter.name] = urwid.Edit()
         self.statusLabels[parameter.name] = urwid.Text("")
         status = self.statusLabels[parameter.name]
         found = False
@@ -217,7 +231,7 @@ class HumanGuidancePopup(urwid.WidgetWrap):
             for lockedParam in self.guidanceOptions['lockedParameters']:
                 if lockedParam['variable'] == parameter.name:
                     status.set_text("Locked to " + str(lockedParam['value']))
-                    edit = self.parameterEdits[parameter.name]
+                    edit = self.parameterLockedValueEdits[parameter.name]
                     edit.set_edit_text (str(lockedParam['value']))
                     shouldLock = urwid.Button("Unlock")
                     urwid.connect_signal(shouldLock, 'click',lambda button: self.cancelSpecialsOnParameter(parameter, index))
@@ -240,9 +254,9 @@ class HumanGuidancePopup(urwid.WidgetWrap):
         if status is None:
             status = urwid.Text("")
 
-        urwid.connect_signal(self.parameterEdits[parameter.name], 'postchange', lambda button, value: self.updateLockValue(parameter, index))
+        urwid.connect_signal(self.parameterLockedValueEdits[parameter.name], 'postchange', lambda button, value: self.updateLockValue(parameter, index))
 
-        return urwid.Columns([title, best, status, edit, shouldLock, shouldScramble, shouldRelearn])
+        return urwid.Columns([urwid.Columns([('pack', title), ('pack', urwid.Text("      ")), ('pack', best)]), rangeArea, urwid.Columns([('pack', status), ('pack', edit)]), urwid.Columns([shouldLock, shouldScramble, shouldRelearn])])
 
     def close(self):
         # Convert all the locked values into floats, remove ones which don't convert
@@ -267,17 +281,29 @@ class HumanGuidancePopup(urwid.WidgetWrap):
         ]
         return content
 
+    def updateMin(self, parameter):
+        try:
+            parameter.config['min'] = float(self.parameterMinEdits[parameter.name].edit_text)
+        except ValueError:
+            pass
+
+    def updateMax(self, parameter):
+        try:
+            parameter.config['max'] = float(self.parameterMaxEdits[parameter.name].edit_text)
+        except ValueError:
+            pass
+
     def updateLockValue(self, parameter, index):
         for paramIndex, lockedParam in enumerate(self.guidanceOptions['lockedParameters']):
             if lockedParam['variable'] == parameter.name:
-                lockedParam['value'] = self.parameterEdits[parameter.name].edit_text
-                self.statusLabels[parameter.name].set_text("Locked to "+str(self.parameterEdits[parameter.name].edit_text))
+                lockedParam['value'] = self.parameterLockedValueEdits[parameter.name].edit_text
+                self.statusLabels[parameter.name].set_text("Locked to " + str(self.parameterLockedValueEdits[parameter.name].edit_text))
 
     def lockParameter(self, parameter, index):
         self.cancelSpecialsOnParameter(parameter, index)
         self.guidanceOptions['lockedParameters'].append({
             "variable": parameter.name,
-            "value": self.parameterEdits[parameter.name].edit_text
+            "value": self.parameterLockedValueEdits[parameter.name].edit_text
         })
         self.listWalker.contents[index] = self.createParameterEditor(parameter, index)
 
