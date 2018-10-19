@@ -29,8 +29,8 @@ class Hyperparameter:
 
             return choices
         elif 'enum' in self.config:
-            if self.root in lockedValues:
-                return lockedValues[self.root]
+            if self.name in lockedValues:
+                return lockedValues[self.name]
 
             choices = hp.choice(name, self.config['enum'])
             return choices
@@ -41,8 +41,8 @@ class Hyperparameter:
                 space[key] = Hyperparameter(config, name + "." + key).createHyperoptSpace(lockedValues)
             return space
         elif self.config['type'] == 'number':
-            if self.root in lockedValues:
-                return lockedValues[self.root]
+            if self.name in lockedValues:
+                return lockedValues[self.name]
 
             mode = self.config.get('mode', 'uniform')
             scaling = self.config.get('scaling', 'linear')

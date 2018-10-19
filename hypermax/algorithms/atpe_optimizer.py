@@ -207,13 +207,13 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
 
         if lockedValues is not None:
             # Remove any locked values from ones the optimizer will examine
-            parameters = list(filter(lambda key: key not in lockedValues.keys(), parameters))
+            parameters = list(filter(lambda param: param.name not in lockedValues.keys(), parameters))
 
         initializationRounds = 10
 
         atpeParams = {}
         atpeParamDetails = {}
-        if len(set(result['loss'] for result in results)) < initializationRounds:
+        if len(list(result for result in results if result['loss'])) < initializationRounds:
             atpeParams = {
                 'gamma': 1.0,
                 'nEICandidates': 24,
@@ -602,7 +602,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                     values = []
                     valueLosses = []
                     for result in results:
-                        if result['loss'] is not None and isinstance(getValue(result, parameter), float) or isinstance(getValue(result, parameter), int):
+                        if result['loss'] is not None and (isinstance(getValue(result, parameter), float) or isinstance(getValue(result, parameter), int)):
                             values.append(getValue(result, parameter))
                             valueLosses.append(result['loss'])
 

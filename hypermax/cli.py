@@ -22,6 +22,8 @@ def main():
 
     if args.results_directory:
         optimizer.importResultsCSV(os.path.join(args.results_directory, 'results.csv'))
+        if os.path.exists(os.path.join(args.results_directory, 'guidance.json')):
+            optimizer.importGuidanceJSON(os.path.join(args.results_directory, 'guidance.json'))
         optimizer.resultsAnalyzer.directory = args.results_directory
     else:
         # See if we see the results directory here.
@@ -38,6 +40,8 @@ def main():
                     prompt = input('It appears there was already an in-progress search with this configuration. Would you like to continue the existing hyper parameter search (' + directory + ")? [yes/no/y/n]\n")
                     if 'y' in prompt:
                         optimizer.importResultsCSV(os.path.join(directory, 'results.csv'))
+                        if os.path.exists(os.path.join(directory, 'guidance.json')):
+                            optimizer.importGuidanceJSON(os.path.join(directory, 'guidance.json'))
                         optimizer.resultsAnalyzer.directory = directory
                     break
 

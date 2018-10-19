@@ -205,6 +205,8 @@ class ResultsAnalyzer:
 
         resultsFile = os.path.join(directory, 'results.csv')
         optimizer.exportResultsCSV(resultsFile)
+        guidanceFile = os.path.join(directory, 'guidance.json')
+        optimizer.exportGuidanceJSON(guidanceFile)
 
         with open(os.path.join(directory, 'search.json'), 'wt') as paramsFile:
             json.dump(optimizer.config.data, paramsFile, indent=4, sort_keys=True)

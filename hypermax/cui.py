@@ -7,6 +7,7 @@ import sys
 import os.path
 import csv
 import yaml
+import copy
 import datetime
 import json
 from panwid import DataTable, DataTableColumn
@@ -168,6 +169,148 @@ class CorrelationGridPopup(urwid.WidgetWrap):
             writer.writerows(self.data)
 
 
+class HumanGuidancePopup(urwid.WidgetWrap):
+    signals = ['close']
+
+    """A dialog shows with the human guidance options """
+    def __init__(self, optimizer):
+        self.optimizer = optimizer
+        self.guidanceOptions = copy.deepcopy(optimizer.humanGuidedATPEOptimizer.guidanceOptions)
+
+        self.parameterEdits = {}
+        self.statusLabels = {}
+
+        self.listWalker = urwid.SimpleListWalker(self.generateGrid())
+        listbox = urwid.ListBox(self.listWalker)
+
+        close_button = urwid.Button("Close")
+        urwid.connect_signal(close_button, 'click',lambda button: self.close())
+
+        buttons = urwid.Filler(urwid.Columns([close_button]))
+
+        super(HumanGuidancePopup, self).__init__(makeMountedFrame(urwid.Pile([(5, buttons), listbox]), 'Apply Human Guidance'))
+
+        self.optimizer = optimizer
+
+    def createParameterEditor(self, parameter, index):
+        title = urwid.Text(parameter.name)
+
+        shouldLock = urwid.Button("Lock")
+        urwid.connect_signal(shouldLock, 'click',lambda button: self.lockParameter(parameter, index))
+        shouldScramble = urwid.Button("Scramble")
+        urwid.connect_signal(shouldScramble, 'click',lambda button: self.scrambleParameter(parameter, index))
+        shouldRelearn = urwid.Button("Relearn")
+        urwid.connect_signal(shouldRelearn, 'click',lambda button: self.refitParameter(parameter, index))
+
+        best = None
+        if self.optimizer.best and parameter.name in self.optimizer.best:
+            best = urwid.Text("Best: " + str(self.optimizer.best[parameter.name]))
+        else:
+            best = urwid.Text("Not in best")
+
+        edit = None
+        self.parameterEdits[parameter.name] = urwid.Edit()
+        self.statusLabels[parameter.name] = urwid.Text("")
+        status = self.statusLabels[parameter.name]
+        found = False
+        if not found:
+            for lockedParam in self.guidanceOptions['lockedParameters']:
+                if lockedParam['variable'] == parameter.name:
+                    status.set_text("Locked to " + str(lockedParam['value']))
+                    edit = self.parameterEdits[parameter.name]
+                    edit.set_edit_text (str(lockedParam['value']))
+                    shouldLock = urwid.Button("Unlock")
+                    urwid.connect_signal(shouldLock, 'click',lambda button: self.cancelSpecialsOnParameter(parameter, index))
+        if not found:
+            for refitParam in self.guidanceOptions['refitParameters']:
+                if refitParam['variable'] == parameter.name:
+                    status.set_text("Refitting from trial " + str(refitParam['refitStartTrial']))
+                    shouldRelearn = urwid.Button("Stop Relearning")
+                    urwid.connect_signal(shouldRelearn, 'click',lambda button: self.cancelSpecialsOnParameter(parameter, index))
+        if not found:
+            for refitParam in self.guidanceOptions['scrambleParameters']:
+                if refitParam['variable'] == parameter.name:
+                    status.set_text("Scrambling (random searching)")
+                    shouldScramble = urwid.Button("Stop Scrambling")
+                    urwid.connect_signal(shouldScramble, 'click',lambda button: self.cancelSpecialsOnParameter(parameter, index))
+
+        if edit is None:
+            edit = urwid.Text("")
+
+        if status is None:
+            status = urwid.Text("")
+
+        urwid.connect_signal(self.parameterEdits[parameter.name], 'postchange', lambda button, value: self.updateLockValue(parameter, index))
+
+        return urwid.Columns([title, best, status, edit, shouldLock, shouldScramble, shouldRelearn])
+
+    def close(self):
+        # Convert all the locked values into floats, remove ones which don't convert
+        newLockedParams = []
+        for param in self.guidanceOptions['lockedParameters']:
+            try:
+                param['value'] = float(param['value'])
+                newLockedParams.append(param)
+            except ValueError:
+                pass
+
+        self.optimizer.humanGuidedATPEOptimizer.guidanceOptions['lockedParameters'] = newLockedParams
+        self.optimizer.humanGuidedATPEOptimizer.guidanceOptions = self.guidanceOptions
+        self._emit("close")
+
+    def generateGrid(self):
+        parameters = sorted([param for param in Hyperparameter(self.optimizer.config.data['hyperparameters']).getFlatParameters() if param.config['type'] == 'number'], key=lambda param:param.name)
+
+        content = [
+            urwid.AttrWrap(self.createParameterEditor(parameter, index), 'body', focus_attr='focus')
+            for index, parameter in enumerate(parameters)
+        ]
+        return content
+
+    def updateLockValue(self, parameter, index):
+        for paramIndex, lockedParam in enumerate(self.guidanceOptions['lockedParameters']):
+            if lockedParam['variable'] == parameter.name:
+                lockedParam['value'] = self.parameterEdits[parameter.name].edit_text
+                self.statusLabels[parameter.name].set_text("Locked to "+str(self.parameterEdits[parameter.name].edit_text))
+
+    def lockParameter(self, parameter, index):
+        self.cancelSpecialsOnParameter(parameter, index)
+        self.guidanceOptions['lockedParameters'].append({
+            "variable": parameter.name,
+            "value": self.parameterEdits[parameter.name].edit_text
+        })
+        self.listWalker.contents[index] = self.createParameterEditor(parameter, index)
+
+    def refitParameter(self, parameter, index):
+        self.cancelSpecialsOnParameter(parameter, index)
+        self.guidanceOptions['refitParameters'].append({
+            "variable": parameter.name,
+            "refitStartTrial": len(self.optimizer.results)
+        })
+        self.listWalker.contents[index] = self.createParameterEditor(parameter, index)
+
+    def scrambleParameter(self, parameter, index):
+        self.cancelSpecialsOnParameter(parameter, index)
+        self.guidanceOptions['scrambleParameters'].append({
+            "variable": parameter.name
+        })
+        self.listWalker.contents[index] = self.createParameterEditor(parameter, index)
+
+    def cancelSpecialsOnParameter(self, parameter, index):
+        for paramIndex, lockedParam in enumerate(self.guidanceOptions['lockedParameters']):
+            if lockedParam['variable'] == parameter.name:
+                del self.guidanceOptions['lockedParameters'][paramIndex]
+                break
+        for paramIndex, refitParam in enumerate(self.guidanceOptions['refitParameters']):
+            if refitParam['variable'] == parameter.name:
+                del self.guidanceOptions['refitParameters'][paramIndex]
+                break
+        for paramIndex, scrambleParam in enumerate(self.guidanceOptions['scrambleParameters']):
+            if scrambleParam['variable'] == parameter.name:
+                del self.guidanceOptions['scrambleParameters'][paramIndex]
+
+        self.listWalker.contents[index] = self.createParameterEditor(parameter, index)
+
 class MessagePopup(urwid.WidgetWrap):
     signals = ['close']
 
@@ -277,6 +420,9 @@ def launchHypermaxUI(optimizer):
         else:
             popupContainer.open_pop_up_with_widget(MessagePopup('No results to compute correlation on yet.'), size=(('relative', 95), ('relative', 95)))
 
+    def viewHumanGuidance():
+        popupContainer.open_pop_up_with_widget(HumanGuidancePopup(optimizer), size=(('relative', 95), ('relative', 95)))
+
     def exportBestParameters():
         if optimizer.best:
             popupContainer.open_pop_up_with_widget(ExportParametersPopup(optimizer))
@@ -297,6 +443,7 @@ def launchHypermaxUI(optimizer):
             urwid.AttrWrap(urwid.Button("Export Results to CSV", on_press=lambda button: popupContainer.open_pop_up_with_widget(ExportCSVPopup(optimizer))), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('View Hyperparameter Correlations', on_press=lambda button: viewHyperparameterCorrelations()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('Export Best Hyperparameters to File', on_press=lambda button: exportBestParameters()), 'body', focus_attr='focus'),
+            urwid.AttrWrap(urwid.Button('Apply Human Guidance', on_press=lambda button: viewHumanGuidance()), 'body', focus_attr='focus'),
             urwid.AttrWrap(urwid.Button('Exit', on_press=onExitClicked), 'body', focus_attr='focus')
         ]
 

@@ -24,6 +24,7 @@ from hypermax.execution import Execution
 from hypermax.hyperparameter import Hyperparameter
 from hypermax.results_analyzer import ResultsAnalyzer
 from hypermax.algorithms.atpe_optimizer import ATPEOptimizer
+from hypermax.algorithms.human_guided_optimizer_wrapper import HumanGuidedOptimizerWrapper
 from hypermax.algorithms.tpe_optimizer import TPEOptimizer
 from hypermax.algorithms.random_search_optimizer import RandomSearchOptimizer
 
@@ -74,6 +75,7 @@ class Optimizer:
 
         self.tpeOptimizer = TPEOptimizer()
         self.atpeOptimizer = ATPEOptimizer()
+        self.humanGuidedATPEOptimizer = HumanGuidedOptimizerWrapper(self.atpeOptimizer)
         self.randomSearchOptimizer = RandomSearchOptimizer()
 
     def __del__(self):
@@ -103,7 +105,7 @@ class Optimizer:
         elif self.searchConfig['method'] == 'random':
             return self.randomSearchOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
         elif self.searchConfig['method'] == 'atpe':
-            params = self.atpeOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
+            params = self.humanGuidedATPEOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
             self.lastATPEParameters = self.atpeOptimizer.lastATPEParameters
             self.atpeParamDetails = self.atpeOptimizer.atpeParamDetails
             return params
@@ -246,6 +248,14 @@ class Optimizer:
         # We are completed, so we can allocate a full contingent of workers
         self.resultsAnalyzer.outputResultsFolder(self, True, workers=4)
 
+    def exportGuidanceJSON(self, fileName):
+        with open(fileName, 'wt') as file:
+            json.dump(self.humanGuidedATPEOptimizer.guidanceOptions, file, indent=4, sort_keys=True)
+
+    def importGuidanceJSON(self, fileName):
+        with open(fileName, 'rt') as file:
+            self.humanGuidedATPEOptimizer.guidanceOptions = json.load(file)
+
     def exportResultsCSV(self, fileName):
         fieldNames = self.resultInformationKeys + sorted(set(self.results[0].keys()).difference(set(self.resultInformationKeys))) # Make sure we keep the order of the field names consistent when writing the csv
         with open(fileName, 'wt') as file:
@@ -261,7 +271,7 @@ class Optimizer:
             for result in results:
                 newResult = {}
                 for key,value in result.items():
-                    if value:
+                    if value is not None and value != "":
                         try:
                             if '.' in value or 'e' in value:
                                 newResult[key] = float(value)
