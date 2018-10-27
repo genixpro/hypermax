@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 
 with open("README.md", "r") as fh:
@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='hypermax',
-    version='0.4.0',
+    version='0.4.1',
     description='Better, faster hyperparameter optimization by mixing the best of humans and machines.',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -16,9 +16,7 @@ setup(
     author_email='brad@electricbrain.io',
     license='MIT',
     python_requires='>=3',
-    packages=[
-        'hypermax'
-    ],
+    packages=find_packages(),
     package_data={
         'hypermax': ['test', 'atpe_models/*.txt', 'atpe_models/*.json'],
     },
