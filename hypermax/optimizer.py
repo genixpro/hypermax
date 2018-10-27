@@ -209,9 +209,9 @@ class Optimizer:
 
             if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results) > 5):
                 self.resultsExportFuture = self.threadExecutor.submit(
-                    lambda: self.resultsAnalyzer.outputResultsFolder(self, self.config.data.get("results", {}).get("graphs", True)))
+                    lambda: self.outputResultsWithBackup(self.config.data.get("results", {}).get("graphs", True)))
             else:
-                self.resultsAnalyzer.outputResultsFolder(self, False)
+                self.outputResultsWithBackup(False)
 
             if 'hypermax_results' in self.config.data:
                 if self.trialsSinceResultsUpload is None or self.trialsSinceResultsUpload >= self.config.data['hypermax_results']['upload_frequency']:
@@ -229,9 +229,15 @@ class Optimizer:
     def runOptimizationThread(self):
         self.thread.start()
 
+    def outputResultsWithBackup(self, graphs, workers=1):
+        self.resultsAnalyzer.outputResultsFolder(self, graphs, workers=workers)
+        directory_head, directory_tail = os.path.split(self.resultsAnalyzer.directory)
+        backup_directory = os.path.join(directory_head, ".backup_" + directory_tail + "~")
+        self.resultsAnalyzer.outputResultsFolder(self, graphs, directory=backup_directory, workers=workers)
+
     def optimizationThread(self):
         # Make sure we output basic results if the process is killed for some reason.
-        atexit.register(lambda: self.resultsAnalyzer.outputResultsFolder(self, False))
+        atexit.register(lambda: self.outputResultsWithBackup(False))
 
         futures = []
         for worker in range(min(len(self.allWorkers), self.totalTrials - len(self.results))):
@@ -246,7 +252,7 @@ class Optimizer:
         concurrent.futures.wait(futures)
 
         # We are completed, so we can allocate a full contingent of workers
-        self.resultsAnalyzer.outputResultsFolder(self, True, workers=4)
+        self.outputResultsWithBackup(True, workers=4)
 
     def exportGuidanceJSON(self, fileName):
         with open(fileName, 'wt') as file:
