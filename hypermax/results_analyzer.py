@@ -23,6 +23,7 @@ import json
 import atexit
 import matplotlib.ticker as mticker
 import traceback
+import copy
 
 
 def handleChartException(function):
@@ -211,9 +212,19 @@ class ResultsAnalyzer:
         with open(os.path.join(directory, 'search.json'), 'wt') as paramsFile:
             json.dump(optimizer.config.data, paramsFile, indent=4, sort_keys=True)
 
-        if optimizer.best:
+        clonedSortedResults = sorted(copy.deepcopy([result for result in optimizer.results if result['loss'] is not None]), key=lambda result: result['loss'])
+        if len(clonedSortedResults) > 0:
+            best = clonedSortedResults[0]
             with open(os.path.join(directory, 'best.json'), 'wt') as paramsFile:
-                json.dump(optimizer.best, paramsFile, indent=4, sort_keys=True)
+                json.dump(best, paramsFile, indent=4, sort_keys=True)
+        if len(clonedSortedResults) > 1:
+            second_best = clonedSortedResults[1]
+            with open(os.path.join(directory, 'second_best.json'), 'wt') as paramsFile:
+                json.dump(second_best, paramsFile, indent=4, sort_keys=True)
+        if len(clonedSortedResults) > 2:
+            third_best = clonedSortedResults[2]
+            with open(os.path.join(directory, 'third_best.json'), 'wt') as paramsFile:
+                json.dump(third_best, paramsFile, indent=4, sort_keys=True)
 
         with open(os.path.join(directory, 'current_trials.json'), 'wt') as paramsFile:
             trials = []
