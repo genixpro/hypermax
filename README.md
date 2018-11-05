@@ -4,7 +4,7 @@ Hypermax is a power tool for optimizing algorithms. It builds on the powerful TP
 meant to help you get to your optimal hyper parameters faster and easier. We call our algorithm Adaptive-TPE, and it is
 fast and accurate optimizer that trades off between explore-style and exploit-style strategies in an intelligent manner
 based on your results. It depends upon pretrained machine learning models that have been taught how to optimize
-your machine learning model as fast as possible. Read the research behind ATPE in Optimizing Optimization (https://www.electricbrain.io/blog/optimizing-optimization) and Learning to Optimize (https://www.electricbrain.io/blog/learning-to-optimize), and use it for yourself by downloading Hypermax.
+your machine learning model as fast as possible. Read the research behind ATPE in [Optimizing Optimization](https://www.electricbrain.io/blog/optimizing-optimization) and [Learning to Optimize](https://www.electricbrain.io/blog/learning-to-optimize), and use it for yourself by downloading Hypermax.
 
 In addition, Hypermax automatically gives you a variety of charts and graphs based on your hyperparameter results.
 Hypermax can be restarted easily in-case of a crash. Hypermax can monitor the CPU and RAM usage of your algorithms - 
@@ -19,7 +19,9 @@ Start optimizing today!
 
 Install using pip:
 
-    pip3 install hypermax -g
+```bash
+pip3 install hypermax -g
+```
     
 Python3 is required.    
 
@@ -29,102 +31,115 @@ In Hypermax, you define your hyper-parameter search, including the variables, me
 loss functions, using a JSON object as you configuration file.
 
 
-
 # Getting Started (Using CLI)
 
 
 Here is an example. Lets say you have the following file, model.py:
 
-    import sklearn.datasets
-    import sklearn.ensemble
-    import sklearn.metrics
-    import datetime
-    
-    def trainModel(params):
-        inputs, outputs = sklearn.datasets.make_hastie_10_2()
-        
-        startTime = datetime.now()
-        
-        model = sklearn.ensemble.RandomForestClassifier(n_estimators=int(params['n_estimators']))
-        model.fit(inputs, outputs)
-        predicted = model.predict(inputs)
-        
-        finishTime = datetime.now()
-        
-        auc = sklearn.metrics.auc(outputs, predicted)
-        
-        return {"auc": auc, "time": (finishTime - startTime).total_seconds()}
-        
+```python
+import sklearn.datasets
+import sklearn.ensemble
+import sklearn.metrics
+import datetime
+
+def trainModel(params):
+    inputs, outputs = sklearn.datasets.make_hastie_10_2()
+
+    startTime = datetime.now()
+
+    model = sklearn.ensemble.RandomForestClassifier(n_estimators=int(params['n_estimators']))
+    model.fit(inputs, outputs)
+    predicted = model.predict(inputs)
+
+    finishTime = datetime.now()
+
+    auc = sklearn.metrics.auc(outputs, predicted)
+
+    return {"auc": auc, "time": (finishTime - startTime).total_seconds()}
+```
+
 You configure your hyper parameter search space by defining a JSON-schema object with the needed values:
 
-    {
-        "hyperparameters": {
-            "type": "object",
-            "properties": {
-                "n_estimators": {
-                    "type": "number",
-                    "min": 1,
-                    "max": 1000,
-                    "scaling": "logarithmic"
-                }
+```python
+{
+    "hyperparameters": {
+        "type": "object",
+        "properties": {
+            "n_estimators": {
+                "type": "number",
+                "min": 1,
+                "max": 1000,
+                "scaling": "logarithmic"
             }
         }
     }
+}
+```
 
 Next, define how you want to execute your optimization function:
 
-    {
-        "function": {
-            "type": "python_function",
-            "module": "model.py",
-            "name": "trainModel"
-        }
+```python
+{
+    "function": {
+        "type": "python_function",
+        "module": "model.py",
+        "name": "trainModel"
     }
+}
+```
     
 And lastly, you need to define your hyper parameter search:
 
-    {
-        "search": {
-            "method": "atpe",
-            "iterations": 1000
-        }
+```python
+{
+    "search": {
+        "method": "atpe",
+        "iterations": 1000
     }
-    
+}
+```
 
-Pulling it all together, you create a file like this search.json, defining your hyper-parameter search:
 
-    {
-        "hyperparameters": {
-            "type": "object",
-            "properties": {
-                "n_estimators": {
-                    "type": "number",
-                    "min": 1,
-                    "max": 1000,
-                    "scaling": "logarithmic"
-                }
+Pulling it all together, you create a file like this `search.json`, defining your hyper-parameter search:
+
+```python
+{
+    "hyperparameters": {
+        "type": "object",
+        "properties": {
+            "n_estimators": {
+                "type": "number",
+                "min": 1,
+                "max": 1000,
+                "scaling": "logarithmic"
             }
-        },
-        "function": {
-            "type": "python_function",
-            "module": "model.py",
-            "name": "trainModel"
-        },
-        "search": {
-            "method": "tpe",
-            "iterations": 1000
         }
+    },
+    "function": {
+        "type": "python_function",
+        "module": "model.py",
+        "name": "trainModel"
+    },
+    "search": {
+        "method": "tpe",
+        "iterations": 1000
     }
+}
+```
     
 And now you can run your hyper-parameter search
 
-    $ hypermax search.json
+```bash
+$ hypermax search.json
+```
  
 Hypermax will automatically begin searching your hyperparameter space. If your computer dies and you need to restart
 your hyperparameter search, its as easy as providing it the existing results directory as a second parameter. Hypermax
 will automatically pick up where it left off.
 
-    $ hypermax search.json results_0/
+```bash
+$ hypermax search.json results_0/
+```
 
 # Results
 
@@ -225,73 +240,78 @@ a limited set of options are supported.
 
 Most of the hyper-parameters that you are going to be tuning are expected to be numbers. The configuration of the number hyper-parameter looks like so:
 
-      "parameter_name": {
-        "type": "number",
-        "mode": "uniform",
-        "scaling": "logarithmic",
-        "min": 1,
-        "max": 1000,
-        "rounding": 1
-      }
+```python
+"parameter_name": {
+    "type": "number",
+    "mode": "uniform",
+    "scaling": "logarithmic",
+    "min": 1,
+    "max": 1000,
+    "rounding": 1
+}
+```
       
 There are 3 required parameters - type, min and max. Type should be set to 'number', and the min and max should represent the minimum and maximum values of
 your range.
 
-There are also three optional parameters. "mode" can be either "uniform" or "normal" (defaults to "uniform"). The "scaling" parameter can be either "linear"
-or "logarithmic" (default to "linear"). And you can additionally set "rounding" if you want values to be rounded to some fixed interval. A rounding set to 1
+There are also three optional parameters. `mode` can be either `uniform` or `normal` (defaults to `uniform`). The `scaling` parameter can be either `linear`
+or `logarithmic` (default to `linear`). And you can additionally set `rounding` if you want values to be rounded to some fixed interval. A rounding set to 1
 will make your parameter an integer.
 
 
 ### Object hyper-parameters
 
 Your hyper-parameter space can contain JSON objects which contain other hyper parameters. In fact, the bottom layer must be made as an object. Simply
-set the type to "object" and provide it a "properties" field.
+set the type to `object` and provide it a `properties` field.
 
-      "parameter_object": {
-        "type": "object",
-        "properties": {
-          "parameter_name": {
-            "type": "number",
-            "mode": "uniform",
-            "scaling": "logarithmic",
-            "min": 1,
-            "max": 1000,
-            "rounding": 1
-          }
-        }
-      }
-      
+```python
+"parameter_object": {
+    "type": "object",
+    "properties": {
+    "parameter_name": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "logarithmic",
+        "min": 1,
+        "max": 1000,
+        "rounding": 1
+    }
+    }
+}
+```      
 
 ### Choices & Decision Points (UNTESTED)
 
 The true power of the TPE algorithm comes from its ability to optimize categorical hyper-parameters, including ones which make other hyper-parameters
-available. To do this, you can provide either a "oneOf" or "anyOf" field. This functionality has not yet been fully tested so please feel free to help
+available. To do this, you can provide either a `oneOf` or `anyOf` field. This functionality has not yet been fully tested so please feel free to help
 out.
 
-      "choice_parameter": {
-        "anyOf": [
-            {
-                "type": "object",
-                "properties": {
-                  "parameter_name": {
+```python
+"choice_parameter": {
+    "anyOf": [
+        {
+            "type": "object",
+            "properties": {
+                "parameter_name": {
                     "type": "number",
                     "min": 1,
                     "max": 1000,
-                  }
                 }
-            },
-            {
-                "type": "object",
-                "properties": {
-                  "other_parameter_name": {
+            }
+        },
+        {
+            "type": "object",
+            "properties": {
+                "other_parameter_name": {
                     "type": "number",
                     "min": 1,
                     "max": 1000
-                  }
                 }
             }
-        ]
-      }
+        }
+    ]
+}
+```
 
 ## Model Execution
 
@@ -302,19 +322,22 @@ There are several different ways of executing your model.
 The most straight forward way to execute your model is by defining a Python function. To do this, simply provide the 
 name of the module and the name of the function in the "module" and "name" functions, like so:
 
-    {
-        "function": {
-            "type": "python_function",
-            "module": "model",
-            "name": "trainModel"
-        }
+```python
+{
+    "function": {
+        "type": "python_function",
+        "module": "model",
+        "name": "trainModel"
     }
+}
+```
 
 Remember that you do not include the extension of the name of your module, there is no ".py" on it. The module is
 referenced using Pythons standard system. This means that you can directly reference any files in the current working
 directory simply by their file-name. Alternatively, you can reference a system-package or a Python package that is
 setup elsewhere. As long as this works:
 
+```bash
     $ python3
     
     Python 3.6.5 (default, Mar 29 2018, 18:20:46) 
@@ -322,76 +345,91 @@ setup elsewhere. As long as this works:
     Type "help", "copyright", "credits" or "license" for more information.
     >>> import module_name
     >>> module.foobar()
-    
+```
+
 Then this will to:
 
-    {
-        "function": {
-            "type": "python_function",
-            "module": "module_name",
-            "name": "foobar"
-        }
+```python
+{
+    "function": {
+        "type": "python_function",
+        "module": "module_name",
+        "name": "foobar"
     }
+}
+```
 
 ### Format of the result
 
 The results can be provided in one of two formats. The simplest is to just return the loss directly as a single floating point value
 from your cost function, or print it to standard output in your executable. For example:
 
-    def trainModel(parameters):
-        # Do some fany stuff
-        loss = 1.0
-        return loss
+```python
+def trainModel(parameters):
+    # Do some fancy stuff
+    loss = 1.0
+    return loss
+```
 
 or as an executable:
 
-    #!/usr/bin/python3
+```python
+#!/usr/bin/python3
 
-    # Do some fany stuff
-    loss = 1.0
-    print(loss)
+# Do some fany stuff
+loss = 1.0
+print(loss)
+```
 
 If you are using multiple losses though, you will have to return each of them as part of a JSON object. For example:
 
-    def trainModel(parameters):
-        # Do some fany stuff
-        accuracy = 0.9
-        stddev = 0.1
-        return {"accuracy": accuracy, "stddev": stddev}
+```python
+def trainModel(parameters):
+    # Do some fancy stuff
+    accuracy = 0.9
+    stddev = 0.1
+    return {"accuracy": accuracy, "stddev": stddev}
+```
 
 or as an executable:
 
-    #!/usr/bin/python3
+```python
+#!/usr/bin/python3
 
-    import json
+import json
 
-    # Do some fany stuff
-    accuracy = 0.9
-    stddev = 0.1
-    print(json.dumps({"accuracy": accuracy, "stddev": stddev}))
+# Do some fancy stuff
+accuracy = 0.9
+stddev = 0.1
+print(json.dumps({"accuracy": accuracy, "stddev": stddev}))
+```
 
 If you want to store additional metadata with your model, you can. Any fields that are unrecognized for any other purpose will be automatically considered as metadata.
 
-    def trainModel(parameters):
-        # Do some fany stuff
-        loss = 1.0
-        additional_statistic = 42.0
-        return {"loss": loss, "additional_statistic": additional_statistic}
+```python
+def trainModel(parameters):
+    # Do some fancy stuff
+    loss = 1.0
+    additional_statistic = 42.0
+    return {"loss": loss, "additional_statistic": additional_statistic}
+```
 
 The time your model takes is automatically measured by Hypermax (time can be used for punishing your model for taking too long, see Losses section).
-However, you may only care about the execution / run-time of your model, and not about the training time. In these cases, you can return "time" as
+However, you may only care about the execution / run-time of your model, and not about the training time. In these cases, you can return `time` as
 an additional variable.
 
-    def trainModel(parameters):
-        # Do some fany stuff
-        model = Model()
-        model.train()
-        start = datetime.now()
-        loss = model.test()
-        end = datetime.now()
-        return {"loss": loss, "time": (end-start).total_seconds()}
+```python
+def trainModel(parameters):
+    # Do some fancy stuff
+    model = Model()
+    model.train()
+    start = datetime.now()
+    loss = model.test()
+    end = datetime.now()
+    return {"loss": loss, "time": (end-start).total_seconds()}
+```
 
-It should be noted that this time is not the same time used for auto_kill purposes. This is the time that will be showed in the UI and considered for optimization
+It should be noted that this time is not the same time used for `auto_kill` purposes. This is the time that will be showed in the UI and considered for optimization
 purposes.
 
 ### Automatically killing models due to running time or RAM usage
@@ -401,31 +439,33 @@ and indeed recommended, to set add limits on how long your model can be running 
 prevents your optimization routine from getting hung due to a model that takes too long to train, or crashing entirely
 because it uses too much RAM.
 
-To do this, simply add in a auto_kill_max_time, auto_kill_max_ram, or auto_kill_max_system_ram option, and set a 
-a kill_loss variable to indicate what the loss should be for models which are killed.
+To do this, simply add in a `auto_kill_max_time`, `auto_kill_max_ram`, or `auto_kill_max_system_ram` option, and set a 
+a `kill_loss` variable to indicate what the loss should be for models which are killed.
 
-auto_kill_max_time is specified in seconds. auto_kill_max_ram and auto_kill_max_system_ram are both specified in
-megabytes, the kind which are based by 1024 (not 1000).
+auto_kill_max_time is specified in seconds. `auto_kill_max_ram` and `auto_kill_max_system_ram` are both specified in
+megabytes, the kind which are based by `1024` (not `1000`).
 
-auto_kill_max_ram only measures the RAM of the model process. However, if your cost-function has other various
-sub-processes which take up RAM, these will not be counted. Therefore, you can use auto_kill_max_system_ram in
+`auto_kill_max_ram` only measures the RAM of the model process. However, if your cost-function has other various
+sub-processes which take up RAM, these will not be counted. Therefore, you can use `auto_kill_max_system_ram` in
 these cases to prevent total system RAM usage from creeping too high (the assumption being your model is what is
 taking up the systems RAM). You are able to provide both at the same time (if you want to).
 
-auto_kill_loss is just a floating point indicating the total loss that should be given to the optimizer when the model
+`auto_kill_loss` is just a floating point indicating the total loss that should be given to the optimizer when the model
 is killed. This helps teach the optimizer to avoid hyper-parameters which lead to models being killed.
 
-    {
-        "function": {
-            "type": "python_function",
-            "module": "model",
-            "name": "trainModel",
-            "auto_kill_max_time": 120.0,
-            "auto_kill_max_ram": 512,
-            "auto_kill_max_system_ram": 3800,
-            "auto_kill_loss": 1.0
-        }
+```python
+{
+    "function": {
+        "type": "python_function",
+        "module": "model",
+        "name": "trainModel",
+        "auto_kill_max_time": 120.0,
+        "auto_kill_max_ram": 512,
+        "auto_kill_max_system_ram": 3800,
+        "auto_kill_loss": 1.0
     }
+}
+```
 
 ## Loss / Cost Functions (UNDER CONSTRUCTION)
 
@@ -439,23 +479,25 @@ You can include the time your model takes to train as one of your loss functions
 to teach the algorithm to avoid bad hyper parameters which lead to long training times. Many algorithms have poor
 combinations of parameters which can lead to long execution time with no improvement in performance.
 
-If the algorithm takes less then the target_time, then no penalty is incurred. As the time taken goes between
-target_time and max_time, the penalty is introduced quadratically. At max_time, the penalty is exactly
-penalty_at_max.
+If the algorithm takes less then the `target_time`, then no penalty is incurred. As the time taken goes between
+`target_time` and `max_time`, the penalty is introduced quadratically. At `max_time`, the penalty is exactly
+`penalty_at_max`.
 
-This usually results in the algorithm choosing a value between target_time and max_time, but closer
-to target_time. For example, with the following:
+This usually results in the algorithm choosing a value between `target_time` and `max_time`, but closer
+to `target_time`. For example, with the following:
 
-    {
-        "metrics": {
-            "time": {
-                "type": "time",
-                "target_time": 5,
-                "max_time": 10,
-                "penalty_at_max": 0.1
-            }
+```python
+{
+    "metrics": {
+        "time": {
+            "type": "time",
+            "target_time": 5,
+            "max_time": 10,
+            "penalty_at_max": 0.1
         }
     }
+}
+```
 
 If the algorithm takes 5.0 seconds, no penalty is introduced. At 6.0 seconds, the penalty is:
     
@@ -610,4 +652,3 @@ This is the grand-todo list and was created on August 4, 2018. Some items may ha
         - Debian / Ubuntu
         - macOS
         - Windows
-
