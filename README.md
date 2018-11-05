@@ -520,7 +520,8 @@ Longer times will have even larger penalties.
 
 See here:
 https://www.electricbrain.io/blog/optimizing-optimization
-https://www.electricbrain.io/blog/learning-to-optimize0
+
+https://www.electricbrain.io/blog/learning-to-optimize
 
 
 # Todo & Wishlist
