@@ -55,7 +55,7 @@ def trainModel(params):
 
     auc = sklearn.metrics.auc(outputs, predicted)
 
-    return {"auc": auc, "time": (finishTime - startTime).total_seconds()}
+    return {"loss": auc, "time": (finishTime - startTime).total_seconds()}
 ```
 
 You configure your hyper parameter search space by defining a JSON-schema object with the needed values:
