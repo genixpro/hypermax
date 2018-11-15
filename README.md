@@ -117,7 +117,7 @@ Pulling it all together, you create a file like this `search.json`, defining you
     },
     "function": {
         "type": "python_function",
-        "module": "model.py",
+        "module": "model",
         "name": "trainModel"
     },
     "search": {
