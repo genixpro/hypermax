@@ -121,7 +121,7 @@ Pulling it all together, you create a file like this `search.json`, defining you
         "name": "trainModel"
     },
     "search": {
-        "method": "tpe",
+        "method": "atpe",
         "iterations": 1000
     }
 }
