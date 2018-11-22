@@ -71,6 +71,7 @@ class Optimizer:
         self.trialNumber = 0
 
         self.lastATPEParameters = None
+        self.lastLockedParameters = None
         self.atpeParamDetails = None
 
         self.tpeOptimizer = TPEOptimizer()
@@ -107,6 +108,7 @@ class Optimizer:
         elif self.searchConfig['method'] == 'atpe':
             params = self.humanGuidedATPEOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
             self.lastATPEParameters = self.atpeOptimizer.lastATPEParameters
+            self.lastLockedParameters = self.atpeOptimizer.lastLockedParameters
             self.atpeParamDetails = self.atpeOptimizer.atpeParamDetails
             return params
 

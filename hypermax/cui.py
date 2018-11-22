@@ -7,6 +7,7 @@ import sys
 import os.path
 import csv
 import yaml
+import math
 import copy
 import datetime
 import json
@@ -648,7 +649,7 @@ def launchHypermaxUI(optimizer):
 
         cutoffs = []
         for cutoff in range(num_columns+1):
-            cutoffs.append(int((len(paramKeys) + 1) * (cutoff) / 3))
+            cutoffs.append(int((len(paramKeys) + 1) * (cutoff) / num_columns))
 
         for column in range(num_columns):
             columnKeys = paramKeys[cutoffs[column]:cutoffs[column+1]]
@@ -698,6 +699,18 @@ def launchHypermaxUI(optimizer):
             currentTrialsRight.set_text(currentTrialsRightText)
 
             optimizationParamsLeftText, optimizationParamsMiddleText, optimizationParamsRightText = splitObjectIntoColumns(optimizer.lastATPEParameters, 3)
+
+            if optimizer.lastATPEParameters and 'gamma' in optimizer.lastATPEParameters:
+                gamma = optimizer.lastATPEParameters['gamma']
+                num_result = len(optimizer.results)
+
+                best = int(max(1, gamma * math.sqrt(num_result)))
+                rest = num_result - best
+
+                optimizationParamsLeftText = optimizationParamsLeftText + "\nBest/Rest Split: " + str(best) + "/" + str(rest)
+                optimizationParamsMiddleText = optimizationParamsMiddleText + "\nLocked Parameters: " + yaml.dump(optimizer.lastLockedParameters)
+                optimizationParamsRightText = optimizationParamsRightText + "\n"
+
             currentOptimizationParamsLeft.set_text(optimizationParamsLeftText)
             currentOptimizationParamsMiddle.set_text(optimizationParamsMiddleText)
             currentOptimizationParamsRight.set_text(optimizationParamsRightText)

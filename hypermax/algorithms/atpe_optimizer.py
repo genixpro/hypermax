@@ -191,6 +191,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
             self.parameterModelConfigurations[param] = data
 
         self.lastATPEParameters = None
+        self.lastLockedParameters = []
         self.atpeParamDetails = None
 
 
@@ -445,6 +446,8 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         if len(results) > initializationRounds:
             primaryParameters, secondaryParameters, correlations = computePrimarySecondary()
 
+            self.lastLockedParameters = []
+
             sortedResults = list(sorted(list(results), key=lambda result: (result['loss'] if result['loss'] is not None else (maxLoss + 1))))
             topResults = sortedResults
             if atpeParams['secondaryLockingMode'] == 'top':
@@ -455,6 +458,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
             for secondary in secondaryParameters:
                 if atpeParams['secondaryProbabilityMode'] == 'fixed':
                     if random.uniform(0, 1) < atpeParams['secondaryFixedProbability']:
+                        self.lastLockedParameters.append(secondary.name)
                         if atpeParams['secondaryLockingMode'] == 'top':
                             lockResult = random.choice(topResults)
                             if lockResult[secondary.name] is not None:
@@ -480,6 +484,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                 elif atpeParams['secondaryProbabilityMode'] == 'correlation':
                     probability = max(0, min(1, abs(correlations[secondary.name]) * atpeParams['secondaryCorrelationMultiplier']))
                     if random.uniform(0, 1) < probability:
+                        self.lastLockedParameters.append(secondary.name)
                         if atpeParams['secondaryLockingMode'] == 'top':
                             lockResult = random.choice(topResults)
                             if lockResult[secondary.name] is not None:
