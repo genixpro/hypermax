@@ -205,11 +205,12 @@ class Execution:
             output = ''
             while process.returncode is None and self.scriptToken not in output and 'no process found' not in output:
                 process.poll()
-                nextChar = str(process.stdout.read(1), 'utf8')
-                if nextChar == chr(127):
-                    output = output[:-1] # Erase the last character from the output.
-                else:
-                    output += nextChar
+                nextChars = str(process.stdout.read(), 'utf8')
+                for nextChar in nextChars:
+                    if nextChar == chr(127):
+                        output = output[:-1] # Erase the last character from the output.
+                    else:
+                        output += nextChar
                 # print(output)
                 try:
                     if self.shouldKillProcess():
