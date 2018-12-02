@@ -22,8 +22,8 @@ Install using pip:
 ```bash
 pip3 install hypermax -g
 ```
-    
-Python3 is required.    
+
+Python3 is required.
 
 # Getting Started (Using Python Library)
 
@@ -32,7 +32,6 @@ loss functions, using a JSON object as you configuration file.
 
 
 # Getting Started (Using CLI)
-
 
 Here is an example. Lets say you have the following file, model.py:
 
@@ -60,7 +59,7 @@ def trainModel(params):
 
 You configure your hyper parameter search space by defining a JSON-schema object with the needed values:
 
-```python
+```json
 {
     "hyperparameters": {
         "type": "object",
@@ -78,7 +77,7 @@ You configure your hyper parameter search space by defining a JSON-schema object
 
 Next, define how you want to execute your optimization function:
 
-```python
+```json
 {
     "function": {
         "type": "python_function",
@@ -87,10 +86,10 @@ Next, define how you want to execute your optimization function:
     }
 }
 ```
-    
-And lastly, you need to define your hyper parameter search:
 
-```python
+Next, you need to define your hyper parameter search:
+
+```json
 {
     "search": {
         "method": "atpe",
@@ -99,10 +98,22 @@ And lastly, you need to define your hyper parameter search:
 }
 ```
 
+Lastly, you need to provide indication if you want to use the UI:
+
+```json
+{
+    "ui": {
+        "enabled": true
+    }
+}
+```
+
+**NOTE:** At the moment the console UI is not supported in Windows environments, so you will need to specify `false` in
+the `enabled` property. We use the `urwid.raw_display` module which relies on `fcntl`. For more information, [see here](https://github.com/urwid/urwid/issues/152).
 
 Pulling it all together, you create a file like this `search.json`, defining your hyper-parameter search:
 
-```python
+```json
 {
     "hyperparameters": {
         "type": "object",
@@ -123,6 +134,9 @@ Pulling it all together, you create a file like this `search.json`, defining you
     "search": {
         "method": "atpe",
         "iterations": 1000
+    },
+    "ui": {
+        "enabled": true
     }
 }
 ```
@@ -132,7 +146,7 @@ And now you can run your hyper-parameter search
 ```bash
 $ hypermax search.json
 ```
- 
+
 Hypermax will automatically begin searching your hyperparameter space. If your computer dies and you need to restart
 your hyperparameter search, its as easy as providing it the existing results directory as a second parameter. Hypermax
 will automatically pick up where it left off.
@@ -240,17 +254,19 @@ a limited set of options are supported.
 
 Most of the hyper-parameters that you are going to be tuning are expected to be numbers. The configuration of the number hyper-parameter looks like so:
 
-```python
-"parameter_name": {
-    "type": "number",
-    "mode": "uniform",
-    "scaling": "logarithmic",
-    "min": 1,
-    "max": 1000,
-    "rounding": 1
+```json
+{
+    "parameter_name": {
+        "type": "number",
+        "mode": "uniform",
+        "scaling": "logarithmic",
+        "min": 1,
+        "max": 1000,
+        "rounding": 1
+    }
 }
 ```
-      
+
 There are 3 required parameters - type, min and max. Type should be set to 'number', and the min and max should represent the minimum and maximum values of
 your range.
 
@@ -264,21 +280,23 @@ will make your parameter an integer.
 Your hyper-parameter space can contain JSON objects which contain other hyper parameters. In fact, the bottom layer must be made as an object. Simply
 set the type to `object` and provide it a `properties` field.
 
-```python
-"parameter_object": {
-    "type": "object",
-    "properties": {
-    "parameter_name": {
-        "type": "number",
-        "mode": "uniform",
-        "scaling": "logarithmic",
-        "min": 1,
-        "max": 1000,
-        "rounding": 1
-    }
+```json
+{
+    "parameter_object": {
+        "type": "object",
+        "properties": {
+            "parameter_name": {
+                "type": "number",
+                "mode": "uniform",
+                "scaling": "logarithmic",
+                "min": 1,
+                "max": 1000,
+                "rounding": 1
+            }
+        }
     }
 }
-```      
+```
 
 ### Choices & Decision Points (UNTESTED)
 
@@ -286,30 +304,32 @@ The true power of the TPE algorithm comes from its ability to optimize categoric
 available. To do this, you can provide either a `oneOf` or `anyOf` field. This functionality has not yet been fully tested so please feel free to help
 out.
 
-```python
-"choice_parameter": {
-    "anyOf": [
-        {
-            "type": "object",
-            "properties": {
-                "parameter_name": {
-                    "type": "number",
-                    "min": 1,
-                    "max": 1000,
+```json
+{
+    "choice_parameter": {
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "parameter_name": {
+                        "type": "number",
+                        "min": 1,
+                        "max": 1000,
+                    }
+                }
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "other_parameter_name": {
+                        "type": "number",
+                        "min": 1,
+                        "max": 1000
+                    }
                 }
             }
-        },
-        {
-            "type": "object",
-            "properties": {
-                "other_parameter_name": {
-                    "type": "number",
-                    "min": 1,
-                    "max": 1000
-                }
-            }
-        }
-    ]
+        ]
+    }
 }
 ```
 
@@ -322,7 +342,7 @@ There are several different ways of executing your model.
 The most straight forward way to execute your model is by defining a Python function. To do this, simply provide the 
 name of the module and the name of the function in the "module" and "name" functions, like so:
 
-```python
+```json
 {
     "function": {
         "type": "python_function",
@@ -349,7 +369,7 @@ setup elsewhere. As long as this works:
 
 Then this will to:
 
-```python
+```json
 {
     "function": {
         "type": "python_function",
@@ -453,7 +473,7 @@ taking up the systems RAM). You are able to provide both at the same time (if yo
 `auto_kill_loss` is just a floating point indicating the total loss that should be given to the optimizer when the model
 is killed. This helps teach the optimizer to avoid hyper-parameters which lead to models being killed.
 
-```python
+```json
 {
     "function": {
         "type": "python_function",
@@ -486,7 +506,7 @@ If the algorithm takes less then the `target_time`, then no penalty is incurred.
 This usually results in the algorithm choosing a value between `target_time` and `max_time`, but closer
 to `target_time`. For example, with the following:
 
-```python
+```json
 {
     "metrics": {
         "time": {
@@ -500,7 +520,7 @@ to `target_time`. For example, with the following:
 ```
 
 If the algorithm takes 5.0 seconds, no penalty is introduced. At 6.0 seconds, the penalty is:
-    
+
     = ((6 - 5) ^ 2 / (10 - 5)^2)*0.1
     = 0.0025
 
@@ -519,10 +539,9 @@ Longer times will have even larger penalties.
 # Details on Adaptive-TPE
 
 See here:
-https://www.electricbrain.io/blog/optimizing-optimization
 
-https://www.electricbrain.io/blog/learning-to-optimize
-
+- [Optimizing Optimization](https://www.electricbrain.io/blog/optimizing-optimization)
+- [Learning to Optimize](https://www.electricbrain.io/blog/learning-to-optimize)
 
 # Todo & Wishlist
 
