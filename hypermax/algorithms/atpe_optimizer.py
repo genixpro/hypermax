@@ -6,13 +6,13 @@ import numpy
 import numpy.random
 import json
 import pkg_resources
-import tempfile
 from hypermax.hyperparameter import Hyperparameter
 import sklearn
 import lightgbm
 import scipy.stats
 import math
 import copy
+import hypermax.file_utils
 
 class ATPEOptimizer(OptimizationAlgorithmBase):
     atpeParameters = [
@@ -182,9 +182,8 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         self.parameterModelConfigurations = {}
         for param in self.atpeParameters:
             modelData = pkg_resources.resource_string(__name__, "../atpe_models/model-" + param + '.txt')
-            with tempfile.NamedTemporaryFile() as file:
-                file.write(modelData)
-                self.parameterModels[param] = lightgbm.Booster(model_file=file.name)
+            with hypermax.file_utils.ClosedNamedTempFile(modelData) as model_file_name:
+                self.parameterModels[param] = lightgbm.Booster(model_file=model_file_name)
 
             configString = pkg_resources.resource_string(__name__, "../atpe_models/model-" + param + '-configuration.json')
             data = json.loads(configString)
