@@ -1223,7 +1223,7 @@ def chooseAlgorithmsForTest(total, shrinkage=0.1, processExecutor=None):
         vectors.append(vector)
 
     # Normalize
-    vectors = sklearn.preprocessing.scale(vectors, axis=1)
+    vectors = sklearn.preprocessing.scale(vectors, axis=0)
 
     # Add weights
     for index, stat in enumerate(statKeys):
