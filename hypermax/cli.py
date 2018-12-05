@@ -21,9 +21,14 @@ def main():
     optimizer = Optimizer(config_data)
 
     if args.results_directory:
-        optimizer.importResultsCSV(os.path.join(args.results_directory, 'results.csv'))
-        if os.path.exists(os.path.join(args.results_directory, 'guidance.json')):
-            optimizer.importGuidanceJSON(os.path.join(args.results_directory, 'guidance.json'))
+        results_path = os.path.join(args.results_directory, 'results.csv')
+        if os.path.exists(results_path):
+            optimizer.importResultsCSV(results_path)
+
+        guidance_path = os.path.join(args.results_directory, 'guidance.json')
+        if os.path.exists(guidance_path):
+            optimizer.importGuidanceJSON(guidance_path)
+
         optimizer.resultsAnalyzer.directory = args.results_directory
     else:
         # See if we see the results directory here.
