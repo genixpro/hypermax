@@ -2,6 +2,7 @@ import hyperopt
 import datetime
 from hypermax.hyperparameter import Hyperparameter
 import json
+from pprint import pprint
 
 class OptimizationAlgorithmBase:
     """ This is the base class for all optimization algorithms. These are the core algorithms which produce
@@ -21,11 +22,8 @@ class OptimizationAlgorithmBase:
 
 
 
-
     def convertResultsToTrials(self, hyperparameterSpace, results):
         trials = hyperopt.Trials()
-
-        parameters = Hyperparameter(hyperparameterSpace).getFlatParameters()
 
         for resultIndex, result in enumerate(results):
             data = {
@@ -45,31 +43,19 @@ class OptimizationAlgorithmBase:
                 'version': 0
             }
 
-            for key in result.keys():
-                if key not in self.resultInformationKeys:
-                    matchingParameters = [parameter for parameter in parameters if parameter.name == key]
-                    if len(matchingParameters)==0:
-                        raise ValueError("Our hyperparameter search space did not contain a " + key + " parameter.")
+            trialValues = Hyperparameter(hyperparameterSpace).convertToTrialValues(result)
 
-                    parameter = matchingParameters[0]
-
-                    value = result[key]
-                    if value is not "":
-                        if 'enum' in parameter.config:
-                            data['misc']['idxs']['root.' + key] = [resultIndex]
-                            data['misc']['vals']['root.' + key] = [parameter.config['enum'].index(value)]
-                        elif parameter.config['type'] == 'number':
-                            data['misc']['idxs']['root.' + key] = [resultIndex]
-                            data['misc']['vals']['root.' + key] = [value]
-                    else:
-                        data['misc']['idxs']['root.' + key] = []
-                        data['misc']['vals']['root.' + key] = []
+            for key in trialValues:
+                value = trialValues[key]
+                if value is not "":
+                    data['misc']['idxs']['root.' + key] = [resultIndex]
+                    data['misc']['vals']['root.' + key] = [value]
+                else:
+                    data['misc']['idxs']['root.' + key] = []
+                    data['misc']['vals']['root.' + key] = []
 
             trials.insert_trial_doc(data)
         return trials
-
-
-
 
     def convertTrialsToResults(self, trials):
         results = []

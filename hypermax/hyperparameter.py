@@ -1,16 +1,18 @@
 from hyperopt import hp
 import math
+from pprint import pprint
+import re
 
 
 class Hyperparameter:
     """ Represents a hyperparameter being options."""
 
-    def __init__(self, config, root='root'):
+    def __init__(self, config, parent=None, root='root'):
         self.config = config
         self.root = root
         self.name = root[5:]
-
-
+        self.parent = parent
+        self.resultVariableName = re.sub("\\.\\d+\\.", ".", self.name)
 
     def createHyperoptSpace(self, lockedValues=None):
         name = self.root
@@ -25,7 +27,11 @@ class Hyperparameter:
             else:
                 data = self.config['oneOf']
 
-            choices = hp.choice(name, [Hyperparameter(param, name + "." + str(index)).createHyperoptSpace(lockedValues) for index,param in enumerate(data)])
+            subSpaces = [Hyperparameter(param, self, name + "." + str(index)).createHyperoptSpace(lockedValues) for index,param in enumerate(data)]
+            for index, space in enumerate(subSpaces):
+                space["$index"] = index
+
+            choices = hp.choice(name, subSpaces)
 
             return choices
         elif 'enum' in self.config:
@@ -34,11 +40,16 @@ class Hyperparameter:
 
             choices = hp.choice(name, self.config['enum'])
             return choices
+        elif 'constant' in self.config:
+            if self.name in lockedValues:
+                return lockedValues[self.name]
+
+            return self.config['constant']
         elif self.config['type'] == 'object':
             space = {}
             for key in self.config['properties'].keys():
                 config = self.config['properties'][key]
-                space[key] = Hyperparameter(config, name + "." + key).createHyperoptSpace(lockedValues)
+                space[key] = Hyperparameter(config, self, name + "." + key).createHyperoptSpace(lockedValues)
             return space
         elif self.config['type'] == 'number':
             if self.name in lockedValues:
@@ -89,18 +100,18 @@ class Hyperparameter:
                 data = self.config['oneOf']
                 
             for index, param in enumerate(data):
-                subKeys = Hyperparameter(param, name + "." + str(index)).getFlatParameterNames()
+                subKeys = Hyperparameter(param, self, name + "." + str(index)).getFlatParameterNames()
                 for key in subKeys:
                     keys.add(key)
 
             return keys
-        elif 'enum' in self.config:
+        elif 'enum' in self.config or 'constant' in self.config:
             return [name]
         elif self.config['type'] == 'object':
             keys = set()
             for key in self.config['properties'].keys():
                 config = self.config['properties'][key]
-                subKeys = Hyperparameter(config, name + "." + key).getFlatParameterNames()
+                subKeys = Hyperparameter(config, self, name + "." + key).getFlatParameterNames()
                 for key in subKeys:
                     keys.add(key)
 
@@ -118,16 +129,16 @@ class Hyperparameter:
                 data = self.config['oneOf']
 
             for index, param in enumerate(data):
-                subParameters = Hyperparameter(param, name + "." + str(index)).getFlatParameters()
+                subParameters = Hyperparameter(param, self, name + "." + str(index)).getFlatParameters()
                 parameters = parameters + subParameters
             return parameters
-        elif 'enum' in self.config:
+        elif 'enum' in self.config or 'constant' in self.config:
             return [self]
         elif self.config['type'] == 'object':
             parameters = []
             for key in self.config['properties'].keys():
                 config = self.config['properties'][key]
-                subParameters = Hyperparameter(config, name + "." + key).getFlatParameters()
+                subParameters = Hyperparameter(config, self, name + "." + key).getFlatParameters()
                 parameters = parameters + subParameters
             return parameters
         elif self.config['type'] == 'number':
@@ -141,10 +152,10 @@ class Hyperparameter:
             else:
                 data = self.config['oneOf']
 
-            log10_cardinality = Hyperparameter(data[0], self.root + ".0").getLog10Cardinality()
+            log10_cardinality = Hyperparameter(data[0], self, self.root + ".0").getLog10Cardinality()
             for index,subParam in enumerate(data[1]):
                 # We used logarithm identities to create this reduction formula
-                other_log10_cardinality = Hyperparameter(subParam, self.root + "." + str(index)).getLog10Cardinality()
+                other_log10_cardinality = Hyperparameter(subParam, self, self.root + "." + str(index)).getLog10Cardinality()
 
                 # Revert to linear at high and low values, for numerical stability. Check here: https://www.desmos.com/calculator/efkbbftd18 to observe
                 if (log10_cardinality-other_log10_cardinality) > 3:
@@ -155,10 +166,12 @@ class Hyperparameter:
                     return other_log10_cardinality + math.log10(1 + math.pow(10, log10_cardinality-other_log10_cardinality))
         elif 'enum' in self.config:
             return math.log10(len(self.config['enum']))
+        elif 'constant' in self.config:
+            return math.log10(1)
         elif self.config['type'] == 'object':
             log10_cardinality = 0
             for index,subParam in enumerate(self.config['properties'].values()):
-                subParameter = Hyperparameter(subParam, self.root + "." + str(index))
+                subParameter = Hyperparameter(subParam, self, self.root + "." + str(index))
                 log10_cardinality += subParameter.getLog10Cardinality()
             return log10_cardinality
         elif self.config['type'] == 'number':
@@ -167,3 +180,60 @@ class Hyperparameter:
             else:
                 return math.log10(20) # Default of 20 for fully uniform numbers.
 
+    def convertToTrialValues(self, result):
+        flatValues = {}
+
+        if 'anyOf' in self.config or 'oneOf' in self.config:
+            if 'anyOf' in self.config:
+                data = self.config['anyOf']
+            else:
+                data = self.config['oneOf']
+
+            subParameterIndex = result[self.resultVariableName + '.$index']
+            flatValues[self.name] = subParameterIndex
+
+            for index, param in enumerate(data):
+                subParameter = Hyperparameter(param, self, self.root + "." + str(index))
+
+                if index == subParameterIndex:
+                    subFlatValues = subParameter.convertToTrialValues(result)
+                    for key in subFlatValues:
+                        flatValues[key] = subFlatValues[key]
+                else:
+                    for flatParam in subParameter.getFlatParameters():
+                        flatValues[flatParam.name] = ""
+
+            return flatValues
+        elif 'constant' in self.config:
+            flatValues[self.name] = result[self.resultVariableName]
+            return flatValues
+        elif 'enum' in self.config:
+            flatValues[self.name] = self.config['enum'].index(result[self.resultVariableName])
+            return flatValues
+        elif self.config['type'] == 'object':
+            for key in self.config['properties'].keys():
+                config = self.config['properties'][key]
+
+                subFlatValues = Hyperparameter(config, self, self.root + "." + key).convertToTrialValues(result)
+
+                for key in subFlatValues:
+                    flatValues[key] = subFlatValues[key]
+
+            return flatValues
+        elif self.config['type'] == 'number':
+            flatValues[self.name] = result[self.resultVariableName]
+            return flatValues
+
+    def getValueFromFlatResult(self, result):
+        name = self.root
+
+        value = None
+
+        if 'anyOf' in self.config or 'oneOf' in self.config:
+            return result[self.root]['$index']
+        elif 'constant' in self.config:
+            return result[self.root]
+        elif self.config['type'] == 'object':
+            return result[self.config.root]
+        elif self.config['type'] == 'number':
+            return result[self.config.root]

@@ -265,7 +265,12 @@ class Optimizer:
             self.humanGuidedATPEOptimizer.guidanceOptions = json.load(file)
 
     def exportResultsCSV(self, fileName):
-        fieldNames = self.resultInformationKeys + sorted(set(self.results[0].keys()).difference(set(self.resultInformationKeys))) # Make sure we keep the order of the field names consistent when writing the csv
+        allKeys = set()
+        for result in self.results:
+            for key in result:
+                allKeys.add(key)
+
+        fieldNames = self.resultInformationKeys + sorted(allKeys.difference(set(self.resultInformationKeys))) # Make sure we keep the order of the field names consistent when writing the csv
         with open(fileName, 'wt') as file:
             writer = csv.DictWriter(file, fieldnames=fieldNames if len(self.results) > 0 else [], dialect='unix')
             writer.writeheader()
