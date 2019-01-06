@@ -43,16 +43,15 @@ class OptimizationAlgorithmBase:
                 'version': 0
             }
 
-            trialValues = Hyperparameter(hyperparameterSpace).convertToTrialValues(result)
-
-            for key in trialValues:
-                value = trialValues[key]
-                if value is not "":
-                    data['misc']['idxs']['root.' + key] = [resultIndex]
-                    data['misc']['vals']['root.' + key] = [value]
-                else:
-                    data['misc']['idxs']['root.' + key] = []
-                    data['misc']['vals']['root.' + key] = []
+            for key in result:
+                if key not in OptimizationAlgorithmBase.resultInformationKeys:
+                    value = result[key]
+                    if value is not "":
+                        data['misc']['idxs']['root.' + key] = [resultIndex]
+                        data['misc']['vals']['root.' + key] = [value]
+                    else:
+                        data['misc']['idxs']['root.' + key] = []
+                        data['misc']['vals']['root.' + key] = []
 
             trials.insert_trial_doc(data)
         return trials

@@ -72,13 +72,13 @@
     "type": "python_function",
     "module": "hypermax.test_model",
     "name": "trainModel",
-    "parallel": 5
+    "parallel": 1
   },
   "search": {
-      "method": "atpe",
+      "method": "abh",
       "iterations": 1000
   },
   "ui": {
-    "enabled": true
+    "enabled": false
   }
 }

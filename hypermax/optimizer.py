@@ -27,6 +27,7 @@ from hypermax.algorithms.atpe_optimizer import ATPEOptimizer
 from hypermax.algorithms.human_guided_optimizer_wrapper import HumanGuidedOptimizerWrapper
 from hypermax.algorithms.tpe_optimizer import TPEOptimizer
 from hypermax.algorithms.random_search_optimizer import RandomSearchOptimizer
+from hypermax.algorithms.adaptive_bayesian_hyperband_optimizer import AdaptiveBayesianHyperband
 
 from hypermax.configuration import Configuration
 
@@ -76,6 +77,7 @@ class Optimizer:
 
         self.tpeOptimizer = TPEOptimizer()
         self.atpeOptimizer = ATPEOptimizer()
+        self.abhOptimizer = AdaptiveBayesianHyperband(self.atpeOptimizer, self.searchConfig.get("budget", 100))
         self.humanGuidedATPEOptimizer = HumanGuidedOptimizerWrapper(self.atpeOptimizer)
         self.randomSearchOptimizer = RandomSearchOptimizer()
 
@@ -93,6 +95,7 @@ class Optimizer:
             "properties": {
                 "method": {"type": "string", "enum": ['atpe', 'tpe', 'random']},
                 "iterations": {"type": "number"},
+                "budget": {"type": "number"}
             },
             "required": ['method', 'iterations']
         }
@@ -107,6 +110,12 @@ class Optimizer:
             return self.randomSearchOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
         elif self.searchConfig['method'] == 'atpe':
             params = self.humanGuidedATPEOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
+            self.lastATPEParameters = self.atpeOptimizer.lastATPEParameters
+            self.lastLockedParameters = self.atpeOptimizer.lastLockedParameters
+            self.atpeParamDetails = self.atpeOptimizer.atpeParamDetails
+            return params
+        elif self.searchConfig['method'] == 'abh':
+            params = self.abhOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
             self.lastATPEParameters = self.atpeOptimizer.lastATPEParameters
             self.lastLockedParameters = self.atpeOptimizer.lastLockedParameters
             self.atpeParamDetails = self.atpeOptimizer.atpeParamDetails
@@ -150,6 +159,27 @@ class Optimizer:
             end = datetime.datetime.now()
 
             result = {}
+
+            def recurse(key, value, root):
+                result_key = root + "." + key
+                if isinstance(value, str):
+                    result[result_key[1:]] = value
+                elif isinstance(value, float) or isinstance(value, bool) or isinstance(value, int):
+                    result[result_key[1:]] = value
+                elif isinstance(value, dict):
+                    for subkey, subvalue in value.items():
+                        recurse(subkey, subvalue, result_key)
+
+            for key in params.keys():
+                value = params[key]
+                recurse(key, value, '')
+
+            result = Hyperparameter(self.config.data['hyperparameters']).convertToTrialValues(result)
+
+            for key in params.keys():
+                if key.startswith("$"):
+                    result[key] = params[key]
+
             result['trial'] = trial
             self.resultsAnalyzer.makeDirs(os.path.join(self.resultsAnalyzer.directory, "logs"))
 
@@ -180,20 +210,6 @@ class Optimizer:
                 result['time'] = modelResult['time']
             else:
                 result['time'] = (end-start).total_seconds()
-
-            def recurse(key, value, root):
-                result_key = root + "." + key
-                if isinstance(value, str):
-                    result[result_key[1:]] = value
-                elif isinstance(value, float) or isinstance(value, bool) or isinstance(value, int):
-                    result[result_key[1:]] = value
-                elif isinstance(value, dict):
-                    for subkey, subvalue in value.items():
-                        recurse(subkey, subvalue, result_key)
-
-            for key in params.keys():
-                value = params[key]
-                recurse(key, value, '')
 
             self.currentTrials.remove(currentTrial)
 

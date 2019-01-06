@@ -39,6 +39,7 @@ class Execution:
         self.endTime = None
         self.killed = False
         self.worker_n = worker_n
+        self.scriptToken = None
 
     @classmethod
     def configurationSchema(self):
@@ -203,7 +204,7 @@ class Execution:
         if self.config['type'] == 'python_function' or self.config['type'] == 'remote':
             process = self.startSubprocess()
             output = ''
-            while process.returncode is None and self.scriptToken not in output and 'no process found' not in output:
+            while process.returncode is None and (not self.scriptToken or self.scriptToken not in output) and 'no process found' not in output:
                 process.poll()
                 nextChars = str(process.stdout.read(), 'utf8')
                 for nextChar in nextChars:
