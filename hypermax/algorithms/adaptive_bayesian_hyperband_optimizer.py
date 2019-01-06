@@ -63,6 +63,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
                         "round": runs_in_sequence,
                         "configs_start": int(ceil(n_configs)),
                         "configs_finish": int(ceil(n_configs / self.eta)),
+                        "input_configs": int(ceil(n_configs * self.eta)),
                         "input_round": runs_in_sequence - 1,
                         "input_budget": -1 if i == 0 else int(ceil(r * self.eta ** ( i - 1 ))),
                         "budget": int(ceil(n_budget))
@@ -89,12 +90,18 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         # Define which secondary halving runs have enough data to operate
         runsNeeded = []
         for run in runs:
+            if run['input_round'] != -1:
+                inputResultsForRun = [result for result in loopResults if (result['$group'] == run['group'] and result['$round'] == run['input_round'])]
+
+                if len(inputResultsForRun) < run['input_configs']:
+                    continue
+
             resultsForRun = [result for result in loopResults if (result['$group'] == run['group'] and result['$round'] == run['round'])]
 
             if len(resultsForRun) < run['configs_start']:
                 runsNeeded.append(run)
 
-        runsNeeded = sorted(runsNeeded, key=lambda run: run['budget'])
+        runsNeeded = sorted(runsNeeded, key=lambda run: (-run['group'], -run['budget']))
 
         if len(runsNeeded) == 0:
             runsNeeded = sorted(runs, key=lambda run: run['budget'])
