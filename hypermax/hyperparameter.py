@@ -208,7 +208,7 @@ class Hyperparameter:
             flatValues[self.name] = result[self.resultVariableName]
             return flatValues
         elif 'enum' in self.config:
-            flatValues[self.name] = self.config['enum'].index(result[self.resultVariableName])
+            flatValues[self.name] = result[self.resultVariableName]
             return flatValues
         elif self.config['type'] == 'object':
             for key in self.config['properties'].keys():

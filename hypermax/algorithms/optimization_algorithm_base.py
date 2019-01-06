@@ -2,6 +2,7 @@ import hyperopt
 import datetime
 from hypermax.hyperparameter import Hyperparameter
 import json
+import copy
 from pprint import pprint
 
 class OptimizationAlgorithmBase:
@@ -43,9 +44,15 @@ class OptimizationAlgorithmBase:
                 'version': 0
             }
 
-            for key in result:
+            resultUpdated = copy.deepcopy(result)
+
+            for param in Hyperparameter(hyperparameterSpace).getFlatParameters():
+                if param.name in resultUpdated and 'enum' in param.config:
+                    resultUpdated[param.name] = param.config['enum'].index(result[param.name])
+
+            for key in resultUpdated:
                 if key not in OptimizationAlgorithmBase.resultInformationKeys:
-                    value = result[key]
+                    value = resultUpdated[key]
                     if value is not "":
                         data['misc']['idxs']['root.' + key] = [resultIndex]
                         data['misc']['vals']['root.' + key] = [value]

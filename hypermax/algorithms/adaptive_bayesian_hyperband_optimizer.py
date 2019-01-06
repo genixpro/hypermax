@@ -75,6 +75,8 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
     def recommendNextParameters(self, hyperparameterSpace, results, lockedValues=None):
         runs = self.createBudgetSchedule()
 
+        results = [result for result in results if result['loss'] is not None]
+
         # Find which is the largest $loop we find in the results
         if len(results) == 0:
             loop = 0
