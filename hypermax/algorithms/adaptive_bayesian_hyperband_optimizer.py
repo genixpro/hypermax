@@ -16,6 +16,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
 
     def __init__(self, baseOptimizer, min_budget, max_budget, eta = 3):
         self.baseOptimizer = baseOptimizer
+        self.randomOptimizer = RandomSearchOptimizer()
 
         self.min_budget = min_budget  # minimum iterations per configuration
         self.max_budget = max_budget  # maximum iterations per configuration
@@ -103,7 +104,11 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
 
         if run['input_round'] == -1:
             resultsForReccomendation = [result for result in results if result['$budget'] == run['budget']]
-            params = self.baseOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation)
+
+            if len(resultsForReccomendation) % 5 == 0:
+                params = self.randomOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation)
+            else:
+                params = self.baseOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation)
 
             params['$budget'] = run['budget']
             params['$loop'] = loop
