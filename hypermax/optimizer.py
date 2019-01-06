@@ -77,7 +77,7 @@ class Optimizer:
 
         self.tpeOptimizer = TPEOptimizer()
         self.atpeOptimizer = ATPEOptimizer()
-        self.abhOptimizer = AdaptiveBayesianHyperband(self.atpeOptimizer, self.searchConfig.get("budget", 100))
+        self.abhOptimizer = AdaptiveBayesianHyperband(self.atpeOptimizer, self.searchConfig.get("min_budget", 1), self.searchConfig.get("max_budget", 100), self.searchConfig.get("eta", 3))
         self.humanGuidedATPEOptimizer = HumanGuidedOptimizerWrapper(self.atpeOptimizer)
         self.randomSearchOptimizer = RandomSearchOptimizer()
 
