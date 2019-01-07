@@ -195,7 +195,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         self.atpeParamDetails = None
 
 
-    def recommendNextParameters(self, hyperparameterSpace, results, lockedValues=None):
+    def recommendNextParameters(self, hyperparameterSpace, results, currentTrials, lockedValues=None):
         rstate = numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))
 
         params = {}

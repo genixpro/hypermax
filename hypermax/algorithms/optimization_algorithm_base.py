@@ -18,7 +18,7 @@ class OptimizationAlgorithmBase:
         'error'
     ]
 
-    def recommendNextParameters(self, hyperparameterSpace, results, lockedValues=None):
+    def recommendNextParameters(self, hyperparameterSpace, results, currentTrials, lockedValues=None):
         pass
 
 
@@ -51,7 +51,7 @@ class OptimizationAlgorithmBase:
                     resultUpdated[param.name] = param.config['enum'].index(result[param.name])
 
             for key in resultUpdated:
-                if key not in OptimizationAlgorithmBase.resultInformationKeys:
+                if key not in OptimizationAlgorithmBase.resultInformationKeys and not key.startswith("$"):
                     value = resultUpdated[key]
                     if value is not "":
                         data['misc']['idxs']['root.' + key] = [resultIndex]

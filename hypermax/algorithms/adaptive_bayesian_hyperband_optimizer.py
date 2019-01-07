@@ -74,18 +74,33 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         return runs
         # return self.results
 
-    def recommendNextParameters(self, hyperparameterSpace, results, lockedValues=None):
+    def createCanonicalStringFromResult(self, result, hyperparameterSpace):
+        params = Hyperparameter(hyperparameterSpace).convertToStructuredValues(result)
+
+        for key in params:
+            if key in OptimizationAlgorithmBase.resultInformationKeys or key.startswith('$'):
+                del params[key]
+
+        return json.dumps(params, sort_keys=True)
+
+    def createCanonicalStringFromParameters(self, params, hyperparameterSpace):
+        newResult = Hyperparameter(hyperparameterSpace).convertToFlatValues(params)
+        return self.createCanonicalStringFromResult(newResult, hyperparameterSpace)
+
+    def recommendNextParameters(self, hyperparameterSpace, results, currentTrials, lockedValues=None):
         runs = self.createBudgetSchedule()
 
-        results = [result for result in results if result['loss'] is not None]
+        space = Hyperparameter(hyperparameterSpace)
+
+        finishedAndRunningResults = [result for result in results if result['loss'] is not None] + [space.convertToFlatValues(trial['params']) for trial in currentTrials]
 
         # Find which is the largest $loop we find in the results
-        if len(results) == 0:
+        if len(finishedAndRunningResults) == 0:
             loop = 0
         else:
-            loop = max([result['$loop'] for result in results])
+            loop = max([result['$loop'] for result in finishedAndRunningResults])
 
-        loopResults = [result for result in results if result['$loop'] == loop]
+        loopResults = [result for result in finishedAndRunningResults if result['$loop'] == loop]
 
         # Define which secondary halving runs have enough data to operate
         runsNeeded = []
@@ -113,9 +128,9 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
             resultsForReccomendation = [result for result in results if result['$budget'] == run['budget']]
 
             if len(resultsForReccomendation) % 5 == 0:
-                params = self.randomOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation)
+                params = self.randomOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation, currentTrials)
             else:
-                params = self.baseOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation)
+                params = self.baseOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation, currentTrials)
 
             params['$budget'] = run['budget']
             params['$loop'] = loop
@@ -128,20 +143,17 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
 
             existingResultsForRun = [result for result in loopResults if (result['$group'] == run['group'] and result['$round'] == run['round'])]
 
-            inputCanonicalStrings = [json.dumps({key:value for key,value in result.items() if key not in OptimizationAlgorithmBase.resultInformationKeys}, sort_keys=True) for result in inputResultsForRun]
-            existingCanonicalStrings = [json.dumps({key:value for key,value in result.items() if key not in OptimizationAlgorithmBase.resultInformationKeys}, sort_keys=True) for result in existingResultsForRun]
+            inputCanonicalStrings = [self.createCanonicalStringFromResult(result, hyperparameterSpace) for result in inputResultsForRun]
+            existingCanonicalStrings = [self.createCanonicalStringFromResult(result, hyperparameterSpace) for result in existingResultsForRun]
 
             neededCanonicalStrings = set(inputCanonicalStrings).difference(existingCanonicalStrings)
             neededResults = [inputResultsForRun[inputCanonicalStrings.index(resultString)] for resultString in neededCanonicalStrings]
 
-            params = copy.deepcopy(random.choice(neededResults))
-
+            chosenResult = random.choice(neededResults)
+            params = space.convertToStructuredValues(chosenResult)
             params['$budget'] = run['budget']
             params['$loop'] = loop
             params['$group'] = run['group']
             params['$round'] = run['round']
-
-            for key in OptimizationAlgorithmBase.resultInformationKeys:
-                del params[key]
 
             return params

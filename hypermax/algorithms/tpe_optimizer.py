@@ -8,7 +8,7 @@ from hypermax.hyperparameter import Hyperparameter
 
 class TPEOptimizer(OptimizationAlgorithmBase):
 
-    def recommendNextParameters(self, hyperparameterSpace, results, lockedValues=None):
+    def recommendNextParameters(self, hyperparameterSpace, results, currentTrials, lockedValues=None):
         if lockedValues is None:
             lockedValues = {}
 

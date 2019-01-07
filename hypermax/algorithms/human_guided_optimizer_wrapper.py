@@ -137,7 +137,7 @@ class HumanGuidedOptimizerWrapper(OptimizationAlgorithmBase):
         else:
             return {root: parameters}
 
-    def recommendNextParameters(self, hyperparameterSpace, results, lockedValues=None):
+    def recommendNextParameters(self, hyperparameterSpace, results, currentTrials, lockedValues=None):
         if lockedValues is None:
             lockedValues = {}
 
@@ -174,7 +174,7 @@ class HumanGuidedOptimizerWrapper(OptimizationAlgorithmBase):
 
         # Filter results to remove the non primary variables
         primaryResults = self.filterResults(results, refitNames)
-        recommendedParams = self.baseOptimizer.recommendNextParameters(primarySpace, primaryResults, lockedValues)
+        recommendedParams = self.baseOptimizer.recommendNextParameters(primarySpace, primaryResults, currentTrials, lockedValues)
 
         # print(recommendedParams)
 
@@ -191,7 +191,7 @@ class HumanGuidedOptimizerWrapper(OptimizationAlgorithmBase):
             filteredSpace = self.filterHyperparameterSpace(hyperparameterSpace, remainingRefits)
             filteredResults = self.filterResults(results[startTrial+1:], remainingRefits)
 
-            refitReccomendation = self.baseOptimizer.recommendNextParameters(filteredSpace, filteredResults, newLockedValues)
+            refitReccomendation = self.baseOptimizer.recommendNextParameters(filteredSpace, filteredResults, currentTrials, newLockedValues)
 
             recommendedParams = refitReccomendation
 

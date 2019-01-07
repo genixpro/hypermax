@@ -105,17 +105,17 @@ class Optimizer:
 
     def sampleNext(self):
         if self.searchConfig['method'] == 'tpe':
-            return self.tpeOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
+            return self.tpeOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results, self.currentTrials)
         elif self.searchConfig['method'] == 'random':
-            return self.randomSearchOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
+            return self.randomSearchOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results, self.currentTrials)
         elif self.searchConfig['method'] == 'atpe':
-            params = self.humanGuidedATPEOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
+            params = self.humanGuidedATPEOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results, self.currentTrials)
             self.lastATPEParameters = self.atpeOptimizer.lastATPEParameters
             self.lastLockedParameters = self.atpeOptimizer.lastLockedParameters
             self.atpeParamDetails = self.atpeOptimizer.atpeParamDetails
             return params
         elif self.searchConfig['method'] == 'abh':
-            params = self.abhOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results)
+            params = self.abhOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results, self.currentTrials)
             self.lastATPEParameters = self.atpeOptimizer.lastATPEParameters
             self.lastLockedParameters = self.atpeOptimizer.lastLockedParameters
             self.atpeParamDetails = self.atpeOptimizer.atpeParamDetails
@@ -158,23 +158,7 @@ class Optimizer:
             modelResult = execution.run()
             end = datetime.datetime.now()
 
-            result = {}
-
-            def recurse(key, value, root):
-                result_key = root + "." + key
-                if isinstance(value, str):
-                    result[result_key[1:]] = value
-                elif isinstance(value, float) or isinstance(value, bool) or isinstance(value, int):
-                    result[result_key[1:]] = value
-                elif isinstance(value, dict):
-                    for subkey, subvalue in value.items():
-                        recurse(subkey, subvalue, result_key)
-
-            for key in params.keys():
-                value = params[key]
-                recurse(key, value, '')
-
-            result = Hyperparameter(self.config.data['hyperparameters']).convertToTrialValues(result)
+            result = Hyperparameter(self.config.data['hyperparameters']).convertToFlatValues(params)
 
             for key in params.keys():
                 if key.startswith("$"):

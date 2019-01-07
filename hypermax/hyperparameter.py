@@ -180,7 +180,22 @@ class Hyperparameter:
             else:
                 return math.log10(20) # Default of 20 for fully uniform numbers.
 
-    def convertToTrialValues(self, result):
+    def convertToFlatValues(self, params):
+        flatParams = {}
+        def recurse(key, value, root):
+            result_key = root + "." + key
+            if isinstance(value, str):
+                flatParams[result_key[1:]] = value
+            elif isinstance(value, float) or isinstance(value, bool) or isinstance(value, int):
+                flatParams[result_key[1:]] = value
+            elif isinstance(value, dict):
+                for subkey, subvalue in value.items():
+                    recurse(subkey, subvalue, result_key)
+
+        for key in params.keys():
+            value = params[key]
+            recurse(key, value, '')
+
         flatValues = {}
 
         if 'anyOf' in self.config or 'oneOf' in self.config:
@@ -189,14 +204,14 @@ class Hyperparameter:
             else:
                 data = self.config['oneOf']
 
-            subParameterIndex = result[self.resultVariableName + '.$index']
+            subParameterIndex = flatParams[self.resultVariableName + '.$index']
             flatValues[self.name] = subParameterIndex
 
             for index, param in enumerate(data):
                 subParameter = Hyperparameter(param, self, self.root + "." + str(index))
 
                 if index == subParameterIndex:
-                    subFlatValues = subParameter.convertToTrialValues(result)
+                    subFlatValues = subParameter.convertToFlatValues(flatParams)
                     for key in subFlatValues:
                         flatValues[key] = subFlatValues[key]
                 else:
@@ -205,35 +220,60 @@ class Hyperparameter:
 
             return flatValues
         elif 'constant' in self.config:
-            flatValues[self.name] = result[self.resultVariableName]
+            flatValues[self.name] = flatParams[self.resultVariableName]
             return flatValues
         elif 'enum' in self.config:
-            flatValues[self.name] = result[self.resultVariableName]
+            flatValues[self.name] = flatParams[self.resultVariableName]
             return flatValues
         elif self.config['type'] == 'object':
             for key in self.config['properties'].keys():
                 config = self.config['properties'][key]
 
-                subFlatValues = Hyperparameter(config, self, self.root + "." + key).convertToTrialValues(result)
+                subFlatValues = Hyperparameter(config, self, self.root + "." + key).convertToFlatValues(flatParams)
 
                 for key in subFlatValues:
                     flatValues[key] = subFlatValues[key]
 
+                if self.name == "":
+                    for key in params.keys():
+                        if key.startswith("$"):
+                            result[key] = params[key]
+
             return flatValues
         elif self.config['type'] == 'number':
-            flatValues[self.name] = result[self.resultVariableName]
+            flatValues[self.name] = flatParams[self.resultVariableName]
             return flatValues
 
-    def getValueFromFlatResult(self, result):
-        name = self.root
-
-        value = None
-
+    def convertToStructuredValues(self, flatValues):
         if 'anyOf' in self.config or 'oneOf' in self.config:
-            return result[self.root]['$index']
+            if 'anyOf' in self.config:
+                data = self.config['anyOf']
+            else:
+                data = self.config['oneOf']
+
+            subParameterIndex = flatValues[self.name]
+            subParam = Hyperparameter(data[subParameterIndex], self, self.root + "." + str(subParameterIndex))
+
+            structured = subParam.convertToStructuredValues(flatValues)
+
+            return structured
         elif 'constant' in self.config:
-            return result[self.root]
+            return flatValues[self.name]
+        elif 'enum' in self.config:
+            return flatValues[self.name]
         elif self.config['type'] == 'object':
-            return result[self.config.root]
+            result = {}
+            for key in self.config['properties'].keys():
+                config = self.config['properties'][key]
+
+                subStructuredValue = Hyperparameter(config, self, self.root + "." + key).convertToStructuredValues(flatValues)
+
+                result[key] = subStructuredValue
+
+                if self.name == "":
+                    for key in flatValues.keys():
+                        if key.startswith("$"):
+                            result[key] = params[key]
+            return result
         elif self.config['type'] == 'number':
-            return result[self.config.root]
+            return flatValues[self.name]
