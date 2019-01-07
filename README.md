@@ -98,6 +98,20 @@ Next, you need to define your hyper parameter search:
 }
 ```
 
+Next, setup where you wants results stored and if you want
+graphs generated:
+
+
+```json
+{
+    "results": {
+        "directory": "results",
+        "graphs": true
+    }
+}
+```
+
+
 Lastly, you need to provide indication if you want to use the UI:
 
 ```json
@@ -134,6 +148,10 @@ Pulling it all together, you create a file like this `search.json`, defining you
     "search": {
         "method": "atpe",
         "iterations": 1000
+    },
+    "results": {
+        "directory": "results",
+        "graphs": true
     },
     "ui": {
         "enabled": true
