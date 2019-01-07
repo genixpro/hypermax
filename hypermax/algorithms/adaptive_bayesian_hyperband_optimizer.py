@@ -127,7 +127,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         if run['input_round'] == -1:
             resultsForReccomendation = [result for result in results if result['$budget'] == run['budget']]
 
-            if len(resultsForReccomendation) % 5 == 0:
+            if random.uniform(0, 1) < 0.1:
                 params = self.randomOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation, currentTrials)
             else:
                 params = self.baseOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation, currentTrials)
