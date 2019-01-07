@@ -237,7 +237,7 @@ class Hyperparameter:
                 if self.name == "":
                     for key in params.keys():
                         if key.startswith("$"):
-                            result[key] = params[key]
+                            flatValues[key] = params[key]
 
             return flatValues
         elif self.config['type'] == 'number':
