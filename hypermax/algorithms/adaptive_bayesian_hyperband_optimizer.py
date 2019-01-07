@@ -77,7 +77,8 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
     def createCanonicalStringFromResult(self, result, hyperparameterSpace):
         params = Hyperparameter(hyperparameterSpace).convertToStructuredValues(result)
 
-        for key in params:
+        keys = list(params.keys())
+        for key in keys:
             if key in OptimizationAlgorithmBase.resultInformationKeys or key.startswith('$'):
                 del params[key]
 

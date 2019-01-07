@@ -255,6 +255,7 @@ class Hyperparameter:
             subParam = Hyperparameter(data[subParameterIndex], self, self.root + "." + str(subParameterIndex))
 
             structured = subParam.convertToStructuredValues(flatValues)
+            structured['$index'] = subParameterIndex
 
             return structured
         elif 'constant' in self.config:
@@ -273,7 +274,7 @@ class Hyperparameter:
                 if self.name == "":
                     for key in flatValues.keys():
                         if key.startswith("$"):
-                            result[key] = params[key]
+                            result[key] = flatValues[key]
             return result
         elif self.config['type'] == 'number':
             return flatValues[self.name]
