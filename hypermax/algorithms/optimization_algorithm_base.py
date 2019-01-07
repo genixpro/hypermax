@@ -53,7 +53,7 @@ class OptimizationAlgorithmBase:
             for key in resultUpdated:
                 if key not in OptimizationAlgorithmBase.resultInformationKeys:
                     value = resultUpdated[key]
-                    if value is not "":
+                    if value is not "" and value is not None:
                         data['misc']['idxs']['root.' + key] = [resultIndex]
                         data['misc']['vals']['root.' + key] = [value]
                     else:
