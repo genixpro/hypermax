@@ -153,7 +153,7 @@ class Hyperparameter:
                 data = self.config['oneOf']
 
             log10_cardinality = Hyperparameter(data[0], self, self.root + ".0").getLog10Cardinality()
-            for index,subParam in enumerate(data[1]):
+            for index,subParam in enumerate(data[1:]):
                 # We used logarithm identities to create this reduction formula
                 other_log10_cardinality = Hyperparameter(subParam, self, self.root + "." + str(index)).getLog10Cardinality()
 
