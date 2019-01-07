@@ -106,7 +106,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         runsNeeded = []
         for run in runs:
             if run['input_round'] != -1:
-                inputResultsForRun = [result for result in loopResults if (result['$group'] == run['group'] and result['$round'] == run['input_round'])]
+                inputResultsForRun = [result for result in loopResults if (result['$group'] == run['group'] and result['$round'] == run['input_round'] and 'loss' in result)]
 
                 if len(inputResultsForRun) < run['input_configs']:
                     continue
