@@ -18,8 +18,8 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         self.baseOptimizer = baseOptimizer
         self.randomOptimizer = RandomSearchOptimizer()
 
-        self.min_budget = min_budget  # minimum iterations per configuration
-        self.max_budget = max_budget  # maximum iterations per configuration
+        self.min_budget = min_budget - 1
+        self.max_budget = max_budget - (min_budget-1)  # maximum iterations per configuration
 
         self.eta = eta  # defines configuration downsampling rate (default = 3)
 
@@ -42,7 +42,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         for s in reversed( range( self.s_max + 1 )):
 
             # initial number of configurations
-            n = int(ceil(self.B / self.max_budget / (s + 1) * self.eta ** s))
+            n = self.B / self.max_budget / (s + 1) * self.eta ** s
 
             # initial number of iterations per config
             r = self.max_budget * self.eta ** (-s)
@@ -57,19 +57,18 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
                 n_configs = n * self.eta ** ( -i )
                 n_budget = r * self.eta ** ( i )
 
-                if n_budget >= self.min_budget:
-                    runs.append({
-                        "group": s,
-                        "round": runs_in_sequence,
-                        "configs_start": int(ceil(n_configs)),
-                        "configs_finish": int(ceil(n_configs / self.eta)),
-                        "input_configs": int(ceil(n_configs * self.eta)),
-                        "input_round": runs_in_sequence - 1,
-                        "input_budget": -1 if i == 0 else int(ceil(r * self.eta ** ( i - 1 ))),
-                        "budget": int(ceil(n_budget))
-                    })
+                runs.append({
+                    "group": s,
+                    "round": runs_in_sequence,
+                    "configs_start": int(ceil(n_configs)),
+                    "configs_finish": int(ceil(n_configs / self.eta)),
+                    "input_configs": int(ceil(n_configs * self.eta)),
+                    "input_round": runs_in_sequence - 1,
+                    "input_budget": -1 if i == 0 else int(ceil(r * self.eta ** ( i - 1 ))),
+                    "budget": int(ceil(n_budget + self.min_budget))
+                })
 
-                    runs_in_sequence += 1
+                runs_in_sequence += 1
 
         return runs
         # return self.results
