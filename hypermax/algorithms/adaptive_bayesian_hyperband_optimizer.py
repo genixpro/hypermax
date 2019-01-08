@@ -106,7 +106,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         else:
             maxLoop = max([result['$loop'] for result in finishedAndRunningResults])
 
-            for loopToTest in range(maxLoop):
+            for loopToTest in range(maxLoop+1):
                 loopResults = [result for result in finishedAndRunningResults if result['$loop'] == loopToTest]
 
                 # Define which secondary halving runs have enough data to operate
