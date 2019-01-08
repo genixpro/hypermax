@@ -127,6 +127,8 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
                 if len(runsNeeded) > 0:
                     loop = loopToTest
                     break
+            if loop is None:
+                loop = maxLoop
 
         if len(runsNeeded) == 0:
             runsNeeded = sorted(runs, key=lambda run: run['budget'])
