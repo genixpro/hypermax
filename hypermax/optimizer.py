@@ -244,6 +244,7 @@ class Optimizer:
         futures = []
         for worker in range(min(len(self.allWorkers), self.totalTrials - len(self.results))):
             futures.append(self.startOptmizationJob())
+            time.sleep(1.0)
 
         while (len(self.results) + len(self.currentTrials)) < self.totalTrials:
             completedFuture = list(concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)[0])[0]
