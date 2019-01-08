@@ -94,29 +94,38 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
 
         finishedAndRunningResults = [result for result in results if result['loss'] is not None] + [space.convertToFlatValues(trial['params']) for trial in currentTrials]
 
+        runsNeeded = []
+        loopResults = []
+        loop = None
+
         # Find which is the largest $loop we find in the results
         if len(finishedAndRunningResults) == 0:
             loop = 0
+            runsNeeded = sorted(runs, key=lambda run: run['budget'])
         else:
-            loop = max([result['$loop'] for result in finishedAndRunningResults])
+            maxLoop = max([result['$loop'] for result in finishedAndRunningResults])
 
-        loopResults = [result for result in finishedAndRunningResults if result['$loop'] == loop]
+            for loopToTest in range(maxLoop):
+                loopResults = [result for result in finishedAndRunningResults if result['$loop'] == loopToTest]
 
-        # Define which secondary halving runs have enough data to operate
-        runsNeeded = []
-        for run in runs:
-            if run['input_round'] != -1:
-                inputResultsForRun = [result for result in loopResults if (result['$group'] == run['group'] and result['$round'] == run['input_round'])]
+                # Define which secondary halving runs have enough data to operate
+                runsNeeded = []
+                for run in runs:
+                    if run['input_round'] != -1:
+                        inputResultsForRun = [result for result in loopResults if (result['$group'] == run['group'] and result['$round'] == run['input_round'] and ('loss' in result))]
 
-                if len(inputResultsForRun) < run['input_configs']:
-                    continue
+                        if len(inputResultsForRun) < run['input_configs']:
+                            continue
 
-            resultsForRun = [result for result in loopResults if (result['$group'] == run['group'] and result['$round'] == run['round'])]
+                    resultsForRun = [result for result in loopResults if (result['$group'] == run['group'] and result['$round'] == run['round'])]
 
-            if len(resultsForRun) < run['configs_start']:
-                runsNeeded.append(run)
+                    if len(resultsForRun) < run['configs_start']:
+                        runsNeeded.append(run)
 
-        runsNeeded = sorted(runsNeeded, key=lambda run: (-run['group'], -run['budget']))
+                runsNeeded = sorted(runsNeeded, key=lambda run: (-run['group'], -run['budget']))
+                if len(runsNeeded) > 0:
+                    loop = loopToTest
+                    break
 
         if len(runsNeeded) == 0:
             runsNeeded = sorted(runs, key=lambda run: run['budget'])
