@@ -461,7 +461,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                         self.lastLockedParameters.append(secondary.name)
                         if atpeParams['secondaryLockingMode'] == 'top':
                             lockResult = random.choice(topResults)
-                            if lockResult[secondary.name] is not None:
+                            if lockResult[secondary.name] is not None and lockResult[secondary.name] != "":
                                 lockedValues[secondary.name] = lockResult[secondary.name]
                         elif atpeParams['secondaryLockingMode'] == 'random':
                             minVal = secondary.config['min']
@@ -487,7 +487,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                         self.lastLockedParameters.append(secondary.name)
                         if atpeParams['secondaryLockingMode'] == 'top':
                             lockResult = random.choice(topResults)
-                            if lockResult[secondary.name] is not None:
+                            if lockResult[secondary.name] is not None and lockResult[secondary.name] != "":
                                 lockedValues[secondary.name] = lockResult[secondary.name]
                         elif atpeParams['secondaryLockingMode'] == 'random':
                             minVal = secondary.config['min']
