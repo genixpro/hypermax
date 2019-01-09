@@ -18,8 +18,8 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         self.baseOptimizer = baseOptimizer
         self.randomOptimizer = RandomSearchOptimizer()
 
-        self.min_budget = min_budget - 1
-        self.max_budget = max_budget - (min_budget-1)  # maximum iterations per configuration
+        self.min_budget = min_budget
+        self.max_budget = max_budget  # maximum iterations per configuration
 
         self.eta = eta  # defines configuration downsampling rate (default = 3)
 
@@ -35,8 +35,6 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
 
 
     def createBudgetSchedule(self):
-        skip_last = 0
-
         runs = []
 
         for s in reversed( range( self.s_max + 1 )):
@@ -44,31 +42,32 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
             # initial number of configurations
             n = self.B / self.max_budget / (s + 1) * self.eta ** s
 
-            # initial number of iterations per config
+            # initial amount of budget per config
             r = self.max_budget * self.eta ** (-s)
 
             runs_in_sequence = 0
 
-            for i in range(( s + 1 ) - int( skip_last )):	# changed from s + 1
+            if r > self.min_budget:
+                for i in range(( s + 1 )):
 
-                # Run each of the n configs for <iterations>
-                # and keep best (n_configs / eta) configurations
+                    # Run each of the n configs for <iterations>
+                    # and keep best (n_configs / eta) configurations
 
-                n_configs = n * self.eta ** ( -i )
-                n_budget = r * self.eta ** ( i )
+                    n_configs = n * self.eta ** ( -i )
+                    n_budget = r * self.eta ** ( i )
 
-                runs.append({
-                    "group": s,
-                    "round": runs_in_sequence,
-                    "configs_start": int(ceil(n_configs)),
-                    "configs_finish": int(ceil(n_configs / self.eta)),
-                    "input_configs": int(ceil(n_configs * self.eta)),
-                    "input_round": runs_in_sequence - 1,
-                    "input_budget": -1 if i == 0 else int(ceil(r * self.eta ** ( i - 1 ))),
-                    "budget": int(ceil(n_budget + self.min_budget))
-                })
+                    runs.append({
+                        "group": s,
+                        "round": runs_in_sequence,
+                        "configs_start": int(ceil(n_configs)),
+                        "configs_finish": int(ceil(n_configs / self.eta)),
+                        "input_configs": int(ceil(n_configs * self.eta)),
+                        "input_round": runs_in_sequence - 1,
+                        "input_budget": -1 if i == 0 else int(ceil(r * self.eta ** ( i - 1 ))),
+                        "budget": int(ceil(n_budget))
+                    })
 
-                runs_in_sequence += 1
+                    runs_in_sequence += 1
 
         return runs
         # return self.results
@@ -138,7 +137,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         if run['input_round'] == -1:
             resultsForReccomendation = [result for result in results if result['$budget'] == run['budget']]
 
-            if random.uniform(0, 1) < 0.1:
+            if random.uniform(0, 1) < 0.2:
                 params = self.randomOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation, currentTrials)
             else:
                 params = self.baseOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation, currentTrials)
