@@ -210,7 +210,8 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
             # Remove any locked values from ones the optimizer will examine
             parameters = list(filter(lambda param: param.name not in lockedValues.keys(), parameters))
 
-        initializationRounds = 10
+        log10_cardinality = Hyperparameter(hyperparameterSpace).getLog10Cardinality()
+        initializationRounds = max(10, log10_cardinality)
 
         atpeParams = {}
         atpeParamDetails = {}

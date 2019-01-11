@@ -47,7 +47,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
 
             runs_in_sequence = 0
 
-            if r > self.min_budget:
+            if round(r) >= self.min_budget:
                 for i in range(( s + 1 )):
 
                     # Run each of the n configs for <iterations>
@@ -59,12 +59,12 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
                     runs.append({
                         "group": s,
                         "round": runs_in_sequence,
-                        "configs_start": int(ceil(n_configs)),
-                        "configs_finish": int(ceil(n_configs / self.eta)),
-                        "input_configs": int(ceil(n_configs * self.eta)),
+                        "configs_start": int(round(n_configs)),
+                        "configs_finish": int(round(n_configs / self.eta)),
+                        "input_configs": int(round(n_configs * self.eta)),
                         "input_round": runs_in_sequence - 1,
                         "input_budget": -1 if i == 0 else int(ceil(r * self.eta ** ( i - 1 ))),
-                        "budget": int(ceil(n_budget))
+                        "budget": int(round(n_budget))
                     })
 
                     runs_in_sequence += 1
@@ -137,7 +137,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         if run['input_round'] == -1:
             resultsForReccomendation = [result for result in results if result['$budget'] == run['budget']]
 
-            if random.uniform(0, 1) < 0.2:
+            if random.uniform(0, 1) < 0.3:
                 params = self.randomOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation, currentTrials)
             else:
                 params = self.baseOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation, currentTrials)
