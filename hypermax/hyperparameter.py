@@ -158,12 +158,13 @@ class Hyperparameter:
                 other_log10_cardinality = Hyperparameter(subParam, self, self.root + "." + str(index)).getLog10Cardinality()
 
                 # Revert to linear at high and low values, for numerical stability. Check here: https://www.desmos.com/calculator/efkbbftd18 to observe
-                if (log10_cardinality-other_log10_cardinality) > 3:
-                    return log10_cardinality+1
-                elif (log10_cardinality-other_log10_cardinality) < 3:
-                    return other_log10_cardinality+1
+                if (log10_cardinality - other_log10_cardinality) > 3:
+                    log10_cardinality = log10_cardinality + 1
+                elif (other_log10_cardinality - log10_cardinality) > 3:
+                    log10_cardinality = other_log10_cardinality +1
                 else:
-                    return other_log10_cardinality + math.log10(1 + math.pow(10, log10_cardinality-other_log10_cardinality))
+                    log10_cardinality = other_log10_cardinality + math.log10(1 + math.pow(10, log10_cardinality-other_log10_cardinality))
+            return log10_cardinality + math.log10(len(data))
         elif 'enum' in self.config:
             return math.log10(len(self.config['enum']))
         elif 'constant' in self.config:
