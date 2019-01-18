@@ -195,7 +195,8 @@ the execution time of your model. Typically, training-time, size of dataset, or 
 is referred to as the "budget" of a particular execution.
 
 By using partially trained networks, ABH is able to explore more widely over more combinations of hyperparameters, and then triage
-the knowledge it gains up to the fully trained model. See the following chart as an example:
+the knowledge it gains up to the fully trained model. It does this by using a tournament of sorts, promoting the best performing 
+parameters on smaller budget runs to be trained at larger budgets. See the following chart as an example:
 
 ![Hyperband CPU Allocation](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/abh_cpu_allocation.png "Single Parameter Loss Chart")
 
