@@ -416,10 +416,15 @@ both in order to match JSON-Schema specifications.
 }
 ```
 
+Hypermax will add in an additional "parameter_name.$index" field into the parameters it sends to your algorithm, so that you
+can tell which side of the branch you are on.
+
+Important! When using oneOf or anyOf, each of the options MUST be "object" type hyperparameters, as shown above.
+
 
 ### Constants
 
-When using decision points with you may find it convenient to add in a constant value to tell you which side of the branch you are on.
+When using decision points, you may find it convenient to add in a constant value to tell you which side of the branch you are on.
 
 This is easy using a "constant" parameter. You can have the same parameter name on both sides of the branch.
 
@@ -427,6 +432,9 @@ This allows you to, for example, test two different neural network optimizers, a
 attached to each, without having to worry that the algorithm is going to learn an "average" learning rate that 
 works for both optimizers. Both sides of the branch will be kept separate during optimization, even though
 they share the same parameter names.
+
+Constant parameters are ignored for optimization purposes, but are still passed into your function, making them mostly
+useful when you want to lock in a parameter without changing your code, or when using decision points like so:
 
 ```json
 {
