@@ -476,7 +476,7 @@ def launchHypermaxUI(optimizer):
 
         listbox = urwid.ListBox(urwid.SimpleFocusListWalker(content))
 
-        menu = makeMountedFrame(urwid.AttrWrap(listbox, 'body'), header='Hypermax v0.1')
+        menu = makeMountedFrame(urwid.AttrWrap(listbox, 'body'), header='Hypermax v0.5.0')
 
         return menu
 

@@ -211,7 +211,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
             parameters = list(filter(lambda param: param.name not in lockedValues.keys(), parameters))
 
         log10_cardinality = Hyperparameter(hyperparameterSpace).getLog10Cardinality()
-        initializationRounds = max(10, log10_cardinality)
+        initializationRounds = max(10, int(log10_cardinality))
 
         atpeParams = {}
         atpeParamDetails = {}
