@@ -183,25 +183,30 @@ Hypermax supports 4 different optimization algorithms:
  - "tpe" - The classic TPE algorithm, with its default configuration
  - "atpe" - Our Adaptive-TPE algorithm, a good general purpose optimizer 
  - "abh" - Adaptive Bayesian Hyperband - this is an optimizer that its able to learn from partially trained algorithms in order to optimizer your fully trained algorithm
-  
+
+The first three optimizers - random, tpe, and atpe, can all be used with no configuration. 
 
 ## Adaptive Bayesian Hyperband
 
-The only optimizer in our arsenal that requires additional configuration is the Adaptive Bayesian Hyperband algorithm.
+The only optimizer in our toolkit that requires additional configuration is the Adaptive Bayesian Hyperband algorithm.
 
 ABH works by training your network with different amounts of resources. Your "Resource" can be any parameter that significantly effects
-the execution time of your model. Typically, training-time, size of dataset, or # of epochs are used as the resource.
+the execution time of your model. Typically, training-time, size of dataset, or # of epochs are used as the resource. The amount of resource
+is referred to as the "budget" of a particular execution.
 
 By using partially trained networks, ABH is able to explore more widely over more combinations of hyperparameters, and then triage
 the knowledge it gains up to the fully trained model. See the following chart as an example:
 
 ![Hyperband CPU Allocation](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/abh_cpu_allocation.png "Single Parameter Loss Chart")
 
+There are many ways you could configure such a system. Hyperband is just a mathematically and theoretically sound way of choosing
+how many brackets to run and with what budgets. ABH is a method that combines Hyperband with ATPE, in the same way that BOHB combines
+Hyperband with conventional TPE.
 
 ABH requires you to select three additional parameters:
 - min_budget - Sets the minimum amount of resource that must be allocated to a single run
 - max_budget - Sets the maximum amount of resource that can be allocated to a single run
-- eta - Defines how much the budget is reduced for each bracket. The theoretically optimum value is technically E or 2.71, but values of 3 or 4 are more typical.
+- eta - Defines how much the budget is reduced for each bracket. The theoretically optimum value is technically E or 2.71, but values of 3 or 4 are more typical and work fine in practice.
 
 You define these parameters like so:
 
@@ -221,6 +226,15 @@ This configuration will result in Hyperband testing 4 different brackets: 30 epo
 
 The budget for each run is provided as a hyperparameter to your function, along side your other hyperparameters. The budget will be given as 
 the "$budget" key in the Python dictionary that is passed to your model function.
+
+Tips:
+ - ABH only works well when the parameters for a run with a small budget correlates strongly with the parameters for a run with a high budget.
+ - Try to eliminate any parameters whose behaviour and effectiveness might change depending on the budget. E.g. a parameter for % of budget in mode 1, % of budget in mode 2 will not
+   work well with ABH. 
+ - Don't test too wide of a range of budgets. As a general rule of thumb, never set min_budget lower then max_budget/eta^4
+ - Never test a min_budget thats so low that your model doesn't train at all. The minimum is there for a reason
+ - If you find that ABH is getting stuck in a local minima, choosing parameters that work well on few epochs but work poorly on many epochs, your 
+   better off using vanilla ATPE and just training networks fully on each run.
 
 
 # Results
