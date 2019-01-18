@@ -82,7 +82,8 @@ Next, define how you want to execute your optimization function:
     "function": {
         "type": "python_function",
         "module": "model.py",
-        "name": "trainModel"
+        "name": "trainModel",
+        "parallel": 1
     }
 }
 ```
@@ -143,7 +144,8 @@ Pulling it all together, you create a file like this `search.json`, defining you
     "function": {
         "type": "python_function",
         "module": "model",
-        "name": "trainModel"
+        "name": "trainModel",
+        "parallel": 1
     },
     "search": {
         "method": "atpe",
@@ -172,6 +174,54 @@ will automatically pick up where it left off.
 ```bash
 $ hypermax search.json results_0/
 ```
+
+# Optimization Algorithms
+
+Hypermax supports 4 different optimization algorithms:
+
+ - "random" - Does a fully random search
+ - "tpe" - The classic TPE algorithm, with its default configuration
+ - "atpe" - Our Adaptive-TPE algorithm, a good general purpose optimizer 
+ - "abh" - Adaptive Bayesian Hyperband - this is an optimizer that its able to learn from partially trained algorithms in order to optimizer your fully trained algorithm
+  
+
+## Adaptive Bayesian Hyperband
+
+The only optimizer in our arsenal that requires additional configuration is the Adaptive Bayesian Hyperband algorithm.
+
+ABH works by training your network with different amounts of resources. Your "Resource" can be any parameter that significantly effects
+the execution time of your model. Typically, training-time, size of dataset, or # of epochs are used as the resource.
+
+By using partially trained networks, ABH is able to explore more widely over more combinations of hyperparameters, and then triage
+the knowledge it gains up to the fully trained model. See the following chart as an example:
+
+![Hyperband CPU Allocation](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/abh_cpu_allocation.png "Single Parameter Loss Chart")
+
+
+ABH requires you to select three additional parameters:
+- min_budget - Sets the minimum amount of resource that must be allocated to a single run
+- max_budget - Sets the maximum amount of resource that can be allocated to a single run
+- eta - Defines how much the budget is reduced for each bracket. The theoretically optimum value is technically E or 2.71, but values of 3 or 4 are more typical.
+
+You define these parameters like so:
+
+```json
+{
+  "search": {
+      "method": "abh",
+      "iterations": 1000,
+      "min_budget": 1,
+      "max_budget": 30,
+      "eta": 3
+  }
+}
+```
+
+This configuration will result in Hyperband testing 4 different brackets: 30 epochs, 10 epochs, 3.333 epochs (rounded down), and 1.1111 epochs (rounded down)
+
+The budget for each run is provided as a hyperparameter to your function, along side your other hyperparameters. The budget will be given as 
+the "$budget" key in the Python dictionary that is passed to your model function.
+
 
 # Results
 
