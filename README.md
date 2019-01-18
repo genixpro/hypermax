@@ -369,8 +369,7 @@ set the type to `object` and provide it a `properties` field.
 ### Choices & Decision Points
 
 The true power of the TPE algorithm comes from its ability to optimize categorical hyper-parameters, including ones which make other hyper-parameters
-available. To do this, you can provide either a `oneOf` or `anyOf` field. This functionality has not yet been fully tested so please feel free to help
-out.
+available. To do this, you can provide either a `oneOf` or `anyOf` field. This functionality is now fully working and ready for use!
 
 ```json
 {
