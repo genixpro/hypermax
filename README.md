@@ -343,6 +343,20 @@ or `logarithmic` (default to `linear`). And you can additionally set `rounding` 
 will make your parameter an integer.
 
 
+### Enumerations
+
+When you have several different possible values that are categorically distinct, you can use an enumeration to specify the possible options:
+
+```json
+{
+    "activation_function": {
+        "type": "string",
+        "enum": ["relu", "elu", "tanh", "sigmoid", "swish", "prelu", "selu"]
+    }
+}
+```
+
+
 ### Object hyper-parameters
 
 Your hyper-parameter space can contain JSON objects which contain other hyper parameters. In fact, the bottom layer must be made as an object. Simply
@@ -369,7 +383,9 @@ set the type to `object` and provide it a `properties` field.
 ### Choices & Decision Points
 
 The true power of the TPE algorithm comes from its ability to optimize categorical hyper-parameters, including ones which make other hyper-parameters
-available. To do this, you can provide either a `oneOf` or `anyOf` field. This functionality is now fully working and ready for use!
+available. To do this, you can provide either a `oneOf` or `anyOf` field. Note that "oneOf" and "anyOf" behave exactly the same - we allow
+both in order to match JSON-Schema specifications.
+ 
 
 ```json
 {
@@ -381,7 +397,7 @@ available. To do this, you can provide either a `oneOf` or `anyOf` field. This f
                     "parameter_name": {
                         "type": "number",
                         "min": 1,
-                        "max": 1000,
+                        "max": 1000
                     }
                 }
             },
@@ -399,6 +415,58 @@ available. To do this, you can provide either a `oneOf` or `anyOf` field. This f
     }
 }
 ```
+
+
+### Constants
+
+When using decision points with you may find it convenient to add in a constant value to tell you which side of the branch you are on.
+
+This is easy using a "constant" parameter. You can have the same parameter name on both sides of the branch.
+
+This allows you to, for example, test two different neural network optimizers, and the various learning rates
+attached to each, without having to worry that the algorithm is going to learn an "average" learning rate that 
+works for both optimizers. Both sides of the branch will be kept separate during optimization, even though
+they share the same parameter names.
+
+```json
+{
+    "optimizer": {
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "optimizerName": {
+                        "type": "string",
+                        "constant": "adam"
+
+                    },
+                    "learningRate": {
+                        "type": "number",
+                        "min": 1e-5,
+                        "max": 1e-3
+                    }
+                }
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "optimizerName": {
+                        "type": "string",
+                        "constant": "sgd"
+
+                    },
+                    "learningRate": {
+                        "type": "number",
+                        "min": 1e-5,
+                        "max": 1e-3
+                    }
+                }
+            }
+        ]
+    }
+}
+```
+
 
 ## Model Execution
 
