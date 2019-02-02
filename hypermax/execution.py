@@ -160,7 +160,10 @@ class Execution:
             process = subprocess.Popen(['ssh', host, self.config['command']], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
             atexit.register(lambda: process.kill())
 
-            process.stdin.write(bytes(json.dumps(self.parameters)+"\n\n", 'utf8'))
+            newParams = dict(self.parameters)
+            newParams['$scriptToken'] = self.generateScriptToken()
+
+            process.stdin.write(bytes(json.dumps(newParams)+"\n\n", 'utf8'))
             process.stdin.flush()
 
             self.process = process
