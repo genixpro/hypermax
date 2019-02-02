@@ -801,7 +801,7 @@ class AlgorithmSimulation:
                 group_log10_cardinality = subgroup_log10_cardinality
             elif (group_log10_cardinality - subgroup_log10_cardinality) > 3:
                 group_log10_cardinality = group_log10_cardinality + 1
-            elif (group_log10_cardinality - subgroup_log10_cardinality) < 3:
+            elif (group_log10_cardinality - subgroup_log10_cardinality) < -3:
                 group_log10_cardinality = subgroup_log10_cardinality + 1
             else:
                 group_log10_cardinality = subgroup_log10_cardinality + math.log10(1 + math.pow(10, group_log10_cardinality - subgroup_log10_cardinality))

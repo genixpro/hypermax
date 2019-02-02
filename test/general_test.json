@@ -7,7 +7,7 @@
         "mode": "uniform",
         "scaling": "logarithmic",
         "min": 1,
-        "max": 1000,
+        "max": 100,
         "rounding": 1
       },
       "second_value": {
@@ -23,13 +23,13 @@
         "mode": "uniform",
         "scaling": "logarithmic",
         "min": 1,
-        "max": 1000,
+        "max": 10000,
         "rounding": 1
       },
       "fourth_value": {
         "type": "number",
         "mode": "uniform",
-        "scaling": "logarithmic",
+        "scaling": "linear",
         "min": 1,
         "max": 1000,
         "rounding": 1
@@ -75,11 +75,8 @@
     "parallel": 1
   },
   "search": {
-      "method": "abh",
-      "iterations": 1000,
-      "min_budget": 1,
-      "max_budget": 20,
-      "eta": 1.643167673
+      "method": "atpe",
+      "iterations": 1000
   },
   "ui": {
     "enabled": false

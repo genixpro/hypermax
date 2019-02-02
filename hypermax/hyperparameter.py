@@ -3,9 +3,8 @@ import math
 from pprint import pprint
 import re
 
-
 class Hyperparameter:
-    """ Represents a hyperparameter being options."""
+    """ This class represents a hyperparameter."""
 
     def __init__(self, config, parent=None, root='root'):
         self.config = config
@@ -13,6 +12,10 @@ class Hyperparameter:
         self.name = root[5:]
         self.parent = parent
         self.resultVariableName = re.sub("\\.\\d+\\.", ".", self.name)
+
+        self.hyperoptVariableName = self.root
+        if 'name' in config:
+            self.hyperoptVariableName = config['name']
 
     def createHyperoptSpace(self, lockedValues=None):
         name = self.root
@@ -27,18 +30,18 @@ class Hyperparameter:
             else:
                 data = self.config['oneOf']
 
-            subSpaces = [Hyperparameter(param, self, name + "." + str(index)).createHyperoptSpace(lockedValues) for index,param in enumerate(data)]
+            subSpaces = [Hyperparameter(param, self, name + "." + str(index)).createHyperoptSpace(lockedValues) for index, param in enumerate(data)]
             for index, space in enumerate(subSpaces):
                 space["$index"] = index
 
-            choices = hp.choice(name, subSpaces)
+            choices = hp.choice(self.hyperoptVariableName, subSpaces)
 
             return choices
         elif 'enum' in self.config:
             if self.name in lockedValues:
                 return lockedValues[self.name]
 
-            choices = hp.choice(name, self.config['enum'])
+            choices = hp.choice(self.hyperoptVariableName, self.config['enum'])
             return choices
         elif 'constant' in self.config:
             if self.name in lockedValues:
@@ -65,14 +68,18 @@ class Hyperparameter:
 
                 if scaling == 'linear':
                     if rounding is not None:
-                        return hp.quniform(name, min, max, rounding)
+                        return hp.quniform(self.hyperoptVariableName, min, max, rounding)
                     else:
-                        return hp.uniform(name, min, max)
+                        return hp.uniform(self.hyperoptVariableName, min, max)
                 elif scaling == 'logarithmic':
                     if rounding is not None:
-                        return hp.qloguniform(name, math.log(min), math.log(max), rounding)
+                        return hp.qloguniform(self.hyperoptVariableName, math.log(min), math.log(max), rounding)
                     else:
-                        return hp.loguniform(name, math.log(min), math.log(max))
+                        return hp.loguniform(self.hyperoptVariableName, math.log(min), math.log(max))
+            if mode == 'randint':
+                max = self.config.get('max', 1)
+                return hp.randint(self.hyperoptVariableName, max)
+
             if mode == 'normal':
                 mean = self.config.get('mean', 0)
                 stddev = self.config.get('stddev', 1)
@@ -80,14 +87,14 @@ class Hyperparameter:
 
                 if scaling == 'linear':
                     if rounding is not None:
-                        return hp.qnormal(name, mean, stddev, rounding)
+                        return hp.qnormal(self.hyperoptVariableName, mean, stddev, rounding)
                     else:
-                        return hp.normal(name, mean, stddev)
+                        return hp.normal(self.hyperoptVariableName, mean, stddev)
                 elif scaling == 'logarithmic':
                     if rounding is not None:
-                        return hp.qlognormal(name, math.log(mean), math.log(stddev), rounding)
+                        return hp.qlognormal(self.hyperoptVariableName, math.log(mean), math.log(stddev), rounding)
                     else:
-                        return hp.lognormal(name, math.log(mean), math.log(stddev))
+                        return hp.lognormal(self.hyperoptVariableName, math.log(mean), math.log(stddev))
 
     def getFlatParameterNames(self):
         name = self.root
@@ -98,7 +105,7 @@ class Hyperparameter:
                 data = self.config['anyOf']
             else:
                 data = self.config['oneOf']
-                
+
             for index, param in enumerate(data):
                 subKeys = Hyperparameter(param, self, name + "." + str(index)).getFlatParameterNames()
                 for key in subKeys:
@@ -144,7 +151,6 @@ class Hyperparameter:
         elif self.config['type'] == 'number':
             return [self]
 
-
     def getLog10Cardinality(self):
         if 'anyOf' in self.config or 'oneOf' in self.config:
             if 'anyOf' in self.config:
@@ -153,7 +159,7 @@ class Hyperparameter:
                 data = self.config['oneOf']
 
             log10_cardinality = Hyperparameter(data[0], self, self.root + ".0").getLog10Cardinality()
-            for index,subParam in enumerate(data[1:]):
+            for index, subParam in enumerate(data[1:]):
                 # We used logarithm identities to create this reduction formula
                 other_log10_cardinality = Hyperparameter(subParam, self, self.root + "." + str(index)).getLog10Cardinality()
 
@@ -161,9 +167,9 @@ class Hyperparameter:
                 if (log10_cardinality - other_log10_cardinality) > 3:
                     log10_cardinality = log10_cardinality + 1
                 elif (other_log10_cardinality - log10_cardinality) > 3:
-                    log10_cardinality = other_log10_cardinality +1
+                    log10_cardinality = other_log10_cardinality + 1
                 else:
-                    log10_cardinality = other_log10_cardinality + math.log10(1 + math.pow(10, log10_cardinality-other_log10_cardinality))
+                    log10_cardinality = other_log10_cardinality + math.log10(1 + math.pow(10, log10_cardinality - other_log10_cardinality))
             return log10_cardinality + math.log10(len(data))
         elif 'enum' in self.config:
             return math.log10(len(self.config['enum']))
@@ -171,7 +177,7 @@ class Hyperparameter:
             return math.log10(1)
         elif self.config['type'] == 'object':
             log10_cardinality = 0
-            for index,subParam in enumerate(self.config['properties'].values()):
+            for index, subParam in enumerate(self.config['properties'].values()):
                 subParameter = Hyperparameter(subParam, self, self.root + "." + str(index))
                 log10_cardinality += subParameter.getLog10Cardinality()
             return log10_cardinality
@@ -179,10 +185,11 @@ class Hyperparameter:
             if 'rounding' in self.config:
                 return math.log10(min(20, (self.config['max'] - self.config['min']) / self.config['rounding'] + 1))
             else:
-                return math.log10(20) # Default of 20 for fully uniform numbers.
+                return math.log10(20)  # Default of 20 for fully uniform numbers.
 
     def convertToFlatValues(self, params):
         flatParams = {}
+
         def recurse(key, value, root):
             result_key = root + "." + key
             if isinstance(value, str):
@@ -279,3 +286,120 @@ class Hyperparameter:
             return result
         elif self.config['type'] == 'number':
             return flatValues[self.name]
+
+
+    @staticmethod
+    def createHyperparameterConfigForHyperoptDomain(domain):
+        if domain.name is None:
+            data = {
+                "type": "object",
+                "properties": {}
+            }
+
+            for key in domain.params:
+                data['properties'][key] = Hyperparameter.createHyperparameterConfigForHyperoptDomain(domain.params[key])
+
+                if 'name' not in data['properties'][key]:
+                    data['properties'][key]['name'] = key
+
+            return data
+        elif domain.name == 'dict':
+            data = {
+                "type": "object",
+                "properties": {}
+            }
+
+            for item in domain.named_args:
+                data['properties'][item[0]] = Hyperparameter.createHyperparameterConfigForHyperoptDomain(item[1])
+
+            return data
+        elif domain.name == 'switch':
+            data = {
+                "oneOf": [
+
+                ]
+            }
+
+            data['name'] = domain.pos_args[0].pos_args
+
+            for item in domain.pos_args[1:]:
+                data['oneOf'].append(Hyperparameter.createHyperparameterConfigForHyperoptDomain(item))
+            return data
+        elif domain.name == 'hyperopt_param':
+            data = Hyperparameter.createHyperparameterConfigForHyperoptDomain(domain.pos_args[1])
+            data['name'] = domain.pos_args[0]._obj
+            return data
+        elif domain.name == 'uniform':
+            data = {"type": "number"}
+            data['scaling'] = 'linear'
+            data['mode'] = 'uniform'
+            data['min'] = domain.pos_args[0]._obj
+            data['max'] = domain.pos_args[1]._obj
+            return data
+        elif domain.name == 'quniform':
+            data = {"type": "number"}
+            data['scaling'] = 'linear'
+            data['mode'] = 'uniform'
+            data['min'] = domain.pos_args[0]._obj
+            data['max'] = domain.pos_args[1]._obj
+            data['rounding'] = domain.pos_args[2]._obj
+            return data
+        elif domain.name == 'loguniform':
+            data = {"type": "number"}
+            data['scaling'] = 'logarithmic'
+            data['mode'] = 'uniform'
+            data['min'] = math.exp(domain.pos_args[0]._obj)
+            data['max'] = math.exp(domain.pos_args[1]._obj)
+            return data
+        elif domain.name == 'qloguniform':
+            data = {"type": "number"}
+            data['scaling'] = 'logarithmic'
+            data['mode'] = 'uniform'
+            data['min'] = math.exp(domain.pos_args[0]._obj)
+            data['max'] = math.exp(domain.pos_args[1]._obj)
+            data['rounding'] = domain.pos_args[2]._obj
+            return data
+        elif domain.name == 'normal':
+            data = {"type": "number"}
+            data['scaling'] = 'linear'
+            data['mode'] = 'normal'
+            data['mean'] = domain.pos_args[0]._obj
+            data['stddev'] = domain.pos_args[1]._obj
+            return data
+        elif domain.name == 'qnormal':
+            data = {"type": "number"}
+            data['scaling'] = 'linear'
+            data['mode'] = 'normal'
+            data['mean'] = domain.pos_args[0]._obj
+            data['stddev'] = domain.pos_args[1]._obj
+            data['rounding'] = domain.pos_args[2]._obj
+            return data
+        elif domain.name == 'lognormal':
+            data = {"type": "number"}
+            data['scaling'] = 'logarithmic'
+            data['mode'] = 'normal'
+            data['mean'] = domain.pos_args[0]._obj
+            data['stddev'] = domain.pos_args[1]._obj
+            return data
+        elif domain.name == 'qlognormal':
+            data = {"type": "number"}
+            data['scaling'] = 'logarithmic'
+            data['mode'] = 'normal'
+            data['mean'] = domain.pos_args[0]._obj
+            data['stddev'] = domain.pos_args[1]._obj
+            data['rounding'] = domain.pos_args[2]._obj
+            return data
+        elif domain.name == 'literal':
+            data = {
+                'type': 'string',
+                'constant': domain._obj
+            }
+            return data
+        elif domain.name == 'randint':
+            data = {"type": "number"}
+            max = domain.pos_args[0]._obj
+            data['max'] = max
+            data['mode'] = 'randint'
+            return data
+        else:
+            raise ValueError(f"Unsupported hyperopt domain type {domain.name}")

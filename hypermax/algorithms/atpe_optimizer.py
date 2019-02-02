@@ -194,7 +194,6 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         self.lastLockedParameters = []
         self.atpeParamDetails = None
 
-
     def recommendNextParameters(self, hyperparameterSpace, results, currentTrials, lockedValues=None):
         rstate = numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))
 
@@ -465,22 +464,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                             if lockResult[secondary.name] is not None and lockResult[secondary.name] != "":
                                 lockedValues[secondary.name] = lockResult[secondary.name]
                         elif atpeParams['secondaryLockingMode'] == 'random':
-                            minVal = secondary.config['min']
-                            maxVal = secondary.config['max']
-
-                            if secondary.config.get('scaling', 'linear') == 'logarithmic':
-                                minVal = math.log(minVal)
-                                maxVal = math.log(maxVal)
-
-                            value = random.uniform(minVal, maxVal)
-
-                            if secondary.config.get('scaling', 'linear') == 'logarithmic':
-                                value = math.exp(value)
-
-                            if 'rounding' in secondary.config:
-                                value = round(value / secondary.config['rounding']) * secondary.config['rounding']
-
-                            lockedValues[secondary.name] = value
+                            lockedValues[secondary.name] = self.chooseRandomValueForParameter(secondary)
 
                 elif atpeParams['secondaryProbabilityMode'] == 'correlation':
                     probability = max(0, min(1, abs(correlations[secondary.name]) * atpeParams['secondaryCorrelationMultiplier']))
@@ -491,22 +475,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                             if lockResult[secondary.name] is not None and lockResult[secondary.name] != "":
                                 lockedValues[secondary.name] = lockResult[secondary.name]
                         elif atpeParams['secondaryLockingMode'] == 'random':
-                            minVal = secondary.config['min']
-                            maxVal = secondary.config['max']
-
-                            if secondary.config.get('scaling', 'linear') == 'logarithmic':
-                                minVal = math.log(minVal)
-                                maxVal = math.log(maxVal)
-
-                            value = random.uniform(minVal, maxVal)
-
-                            if secondary.config.get('scaling', 'linear') == 'logarithmic':
-                                value = math.exp(value)
-
-                            if 'rounding' in secondary.config:
-                                value = round(value / secondary.config['rounding']) * secondary.config['rounding']
-
-                            lockedValues[secondary.name] = value
+                            lockedValues[secondary.name] = self.chooseRandomValueForParameter(secondary)
 
             # Now last step, we filter results prior to sending them into ATPE
             for resultIndex, result in enumerate(results):
@@ -541,11 +510,48 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                                              n_EI_candidates=int(atpeParams['nEICandidates'])),
                       max_evals=1,
                       trials=self.convertResultsToTrials(hyperparameterSpace, filteredResults),
-                      rstate=rstate)
-        
+                      rstate=rstate,
+                      show_progressbar=False)
+
         return params
 
 
+    def chooseRandomValueForParameter(self, parameter):
+        if parameter.config.get('mode', 'uniform') == 'uniform':
+            minVal = parameter.config['min']
+            maxVal = parameter.config['max']
+
+            if parameter.config.get('scaling', 'linear') == 'logarithmic':
+                minVal = math.log(minVal)
+                maxVal = math.log(maxVal)
+
+            value = random.uniform(minVal, maxVal)
+
+            if parameter.config.get('scaling', 'linear') == 'logarithmic':
+                value = math.exp(value)
+
+            if 'rounding' in parameter.config:
+                value = round(value / parameter.config['rounding']) * parameter.config['rounding']
+        elif parameter.get('mode', 'uniform') == 'normal':
+            meanVal = parameter.config['mean']
+            stddevVal = parameter.config['stddev']
+
+            if parameter.config.get('scaling', 'linear') == 'logarithmic':
+                meanVal = math.log(meanVal)
+                stddevVal = math.log(stddevVal)
+
+            value = random.gauss(meanVal, stddevVal)
+
+            if parameter.config.get('scaling', 'linear') == 'logarithmic':
+                value = math.exp(value)
+
+            if 'rounding' in parameter.config:
+                value = round(value / parameter.config['rounding']) * parameter.config['rounding']
+        elif parameter.get('mode', 'uniform') == 'randint':
+            max = parameter.config['max']
+            value = random.randint(0, max-1)
+
+        return value
 
     def computePartialResultStatistics(self, hyperparameterSpace, results):
         losses = numpy.array(sorted([result['loss'] for result in results if result['loss'] is not None]))
@@ -633,7 +639,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
             statistics['correlation_best_percentile75_ratio'] = 0
             statistics['correlation_percentile5_percentile25_ratio'] = 0
         else:
-            bestCorrelation = numpy.percentile(correlations, 100) # Correlations are in the opposite order of losses, higher correlation is considered "best"
+            bestCorrelation = numpy.percentile(correlations, 100)  # Correlations are in the opposite order of losses, higher correlation is considered "best"
             percentile5Correlation = numpy.percentile(correlations, 95)
             percentile25Correlation = numpy.percentile(correlations, 75)
             percentile50Correlation = numpy.percentile(correlations, 50)
@@ -691,36 +697,36 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         recent25Count = min(len(results), 25)
         recent25Results = results[-recent25Count:]
 
-        recent15PercentCount = max(math.ceil(len(results)*0.15), 5)
+        recent15PercentCount = max(math.ceil(len(results) * 0.15), 5)
         recent15PercentResults = results[-recent15PercentCount:]
 
         statistics = {}
         allResultStatistics = self.computePartialResultStatistics(hyperparameterSpace, allResults)
-        for stat,value in allResultStatistics.items():
+        for stat, value in allResultStatistics.items():
             statistics['all_' + stat] = value
 
         percentile10Statistics = self.computePartialResultStatistics(hyperparameterSpace, percentile10Results)
-        for stat,value in percentile10Statistics.items():
+        for stat, value in percentile10Statistics.items():
             statistics['top_10%_' + stat] = value
 
         percentile20Statistics = self.computePartialResultStatistics(hyperparameterSpace, percentile20Results)
-        for stat,value in percentile20Statistics.items():
+        for stat, value in percentile20Statistics.items():
             statistics['top_20%_' + stat] = value
 
         percentile30Statistics = self.computePartialResultStatistics(hyperparameterSpace, percentile30Results)
-        for stat,value in percentile30Statistics.items():
+        for stat, value in percentile30Statistics.items():
             statistics['top_30%_' + stat] = value
 
         recent10Statistics = self.computePartialResultStatistics(hyperparameterSpace, recent10Results)
-        for stat,value in recent10Statistics.items():
+        for stat, value in recent10Statistics.items():
             statistics['recent_10_' + stat] = value
 
         recent25Statistics = self.computePartialResultStatistics(hyperparameterSpace, recent25Results)
-        for stat,value in recent25Statistics.items():
+        for stat, value in recent25Statistics.items():
             statistics['recent_25_' + stat] = value
 
         recent15PercentResult = self.computePartialResultStatistics(hyperparameterSpace, recent15PercentResults)
-        for stat,value in recent15PercentResult.items():
+        for stat, value in recent15PercentResult.items():
             statistics['recent_15%_' + stat] = value
 
         # Although we have added lots of protection in the computePartialResultStatistics code, one last hedge against any NaN or infinity values coming up

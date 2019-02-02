@@ -44,26 +44,22 @@ class OptimizationAlgorithmBase:
                 'version': 0
             }
 
-            resultUpdated = copy.deepcopy(result)
-
             for param in Hyperparameter(hyperparameterSpace).getFlatParameters():
-                if param.name in resultUpdated and 'enum' in param.config:
-                    resultUpdated[param.name] = param.config['enum'].index(result[param.name])
+                value = result[param.name]
+                if value is not "" and value is not None:
+                    if 'enum' in param.config:
+                        value = param.config['enum'].index(value)
 
-            for key in resultUpdated:
-                if key not in OptimizationAlgorithmBase.resultInformationKeys and not key.startswith("$"):
-                    value = resultUpdated[key]
-                    if value is not "" and value is not None:
-                        data['misc']['idxs']['root.' + key] = [resultIndex]
-                        data['misc']['vals']['root.' + key] = [value]
-                    else:
-                        data['misc']['idxs']['root.' + key] = []
-                        data['misc']['vals']['root.' + key] = []
+                    data['misc']['idxs'][param.hyperoptVariableName] = [resultIndex]
+                    data['misc']['vals'][param.hyperoptVariableName] = [value]
+                else:
+                    data['misc']['idxs'][param.hyperoptVariableName] = []
+                    data['misc']['vals'][param.hyperoptVariableName] = []
 
             trials.insert_trial_doc(data)
         return trials
 
-    def convertTrialsToResults(self, trials):
+    def convertTrialsToResults(self, hyperparameterSpace, trials):
         results = []
         for trialIndex, trial in enumerate(trials.trials):
             data = {
@@ -75,11 +71,18 @@ class OptimizationAlgorithmBase:
             }
 
             params = trial['misc']['vals']
-            for key in params.keys():
+            for param in Hyperparameter(hyperparameterSpace).getFlatParameters():
+                key = param.hyperoptVariableName
+
                 if len(params[key]) == 1:
-                    data[key[5:]] = json.dumps(params[key][0])
+                    value = params[key][0]
+                    if 'enum' in param.config:
+                        value = param.config['enum'][value]
+
+                    data[param.name] = value
                 else:
-                    data[key[5:]] = ''
+                    data[param.name] = ''
+
 
             results.append(data)
         return results

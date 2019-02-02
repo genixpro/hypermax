@@ -29,6 +29,7 @@ class TPEOptimizer(OptimizationAlgorithmBase):
                       algo=functools.partial(hyperopt.tpe.suggest, n_EI_candidates=24, gamma=0.25),
                       max_evals=1,
                       trials=trials,
-                      rstate=rstate)
+                      rstate=rstate,
+                      show_progressbar=False)
         return params
 

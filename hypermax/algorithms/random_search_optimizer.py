@@ -28,6 +28,7 @@ class RandomSearchOptimizer(OptimizationAlgorithmBase):
                       algo=functools.partial(hyperopt.rand.suggest),
                       max_evals=1,
                       trials=trials,
-                      rstate=rstate)
+                      rstate=rstate,
+                      show_progressbar=False)
         return params
 
