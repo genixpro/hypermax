@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='hypermax',
-    version='0.5.0',
+    version='0.5.1',
     description='Better, faster hyperparameter optimization by mixing the best of humans and machines.',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -22,18 +22,18 @@ setup(
     },
     install_requires=[
         'hyperopt',
-        'networkx==1.11',
         'scikit-learn',
         'numpy',
         'scipy',
         'jsonschema',
         'pyyaml',
         'urwid',
-        'panwid',
+        'panwid==0.2.5',
         'lightgbm',
         'psutil',
         'matplotlib',
-        'colors.py'
+        'colors.py',
+        'pymongo'
     ],
     classifiers=[
         'Intended Audience :: Education',
