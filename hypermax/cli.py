@@ -25,7 +25,7 @@ def main():
     execute(conf, dir_res)
     
 def execute(conf, dir_res=None):
-    with conf as file:
+    with open(conf) as file:
         config_data = json.load(file)
 
     optimizer = Optimizer(config_data)
