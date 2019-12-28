@@ -8,28 +8,38 @@ from pprint import pprint
 from hypermax.optimizer import Optimizer
 import csv
 
-def main():
+def parse_args():
     parser = argparse.ArgumentParser(description='Provide configuration options for Hypermax')
-    parser.add_argument('configuration_file', metavar='configuration_file', type=argparse.FileType('rb'), nargs=1, help='The JSON based configuration file which is used to configure the hyper-parameter search.')
+    parser.add_argument('configuration_file', metavar='configuration_file', type=str, nargs=1, help='The JSON based configuration file which is used to configure the hyper-parameter search.')
     parser.add_argument('results_directory', metavar='results_directory', type=str, nargs='?', help='The directory of your existing results to reload and restart from.')
 
     args = parser.parse_args()
+    return args
 
-    with args.configuration_file[0] as file:
+
+def main():
+    args = parse_args()
+    conf = args.configuration_file[0]
+    dir_res = args.results_directory
+    
+    execute(conf, dir_res)
+    
+def execute(conf, dir_res=None):
+    with open(conf) as file:
         config_data = json.load(file)
 
     optimizer = Optimizer(config_data)
 
-    if args.results_directory:
-        results_path = os.path.join(args.results_directory, 'results.csv')
+    if dir_res:
+        results_path = os.path.join(dir_res, 'results.csv')
         if os.path.exists(results_path):
             optimizer.importResultsCSV(results_path)
 
-        guidance_path = os.path.join(args.results_directory, 'guidance.json')
+        guidance_path = os.path.join(dir_res, 'guidance.json')
         if os.path.exists(guidance_path):
             optimizer.importGuidanceJSON(guidance_path)
 
-        optimizer.resultsAnalyzer.directory = args.results_directory
+        optimizer.resultsAnalyzer.directory = dir_res
     else:
         # See if we see the results directory here.
         directories = os.listdir('.')
