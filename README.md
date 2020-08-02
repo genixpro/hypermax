@@ -698,8 +698,8 @@ Longer times will have even larger penalties.
 
 See here:
 
-- [Optimizing Optimization](https://www.electricbrain.io/blog/optimizing-optimization)
-- [Learning to Optimize](https://www.electricbrain.io/blog/learning-to-optimize)
+- [Optimizing Optimization](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/Optimizing%20Optimization.docx)
+- [Learning to Optimize](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/Learning%20to%20Optimize.docx)
 
 # Todo & Wishlist
 
