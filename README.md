@@ -4,7 +4,7 @@ Hypermax is a power tool for optimizing algorithms. It builds on the powerful TP
 meant to help you get to your optimal hyper parameters faster and easier. We call our algorithm Adaptive-TPE, and it is
 fast and accurate optimizer that trades off between explore-style and exploit-style strategies in an intelligent manner
 based on your results. It depends upon pretrained machine learning models that have been taught how to optimize
-your machine learning model as fast as possible. Read the research behind ATPE in [Optimizing Optimization](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/Optimizing%20Optimization.docx) and [Learning to Optimize](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/Learning%20to%20Optimize.docx), and use it for yourself by downloading Hypermax.
+your machine learning model as fast as possible. Read the research behind ATPE in [Optimizing Optimization](https://articulon.bradleyarsenault.me/article/optimizing-optimization) and [Learning to Optimize](https://articulon.bradleyarsenault.me/article/learning-to-optimize), and use it for yourself by downloading Hypermax.
 
 In addition, Hypermax automatically gives you a variety of charts and graphs based on your hyperparameter results.
 Hypermax can be restarted easily in-case of a crash. Hypermax can monitor the CPU and RAM usage of your algorithms - 
@@ -698,8 +698,8 @@ Longer times will have even larger penalties.
 
 See here:
 
-- [Optimizing Optimization](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/Optimizing%20Optimization.docx)
-- [Learning to Optimize](https://raw.githubusercontent.com/electricbrainio/hypermax/master/docs/Learning%20to%20Optimize.docx)
+- [Optimizing Optimization](https://articulon.bradleyarsenault.me/article/optimizing-optimization)
+- [Learning to Optimize](https://articulon.bradleyarsenault.me/article/learning-to-optimize)
 
 # Todo & Wishlist
 
