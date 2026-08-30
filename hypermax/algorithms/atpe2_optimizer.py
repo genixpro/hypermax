@@ -12,6 +12,7 @@ import numpy as np
 
 from .optimization_algorithm_base import OptimizationAlgorithmBase
 from .atpe2.controller import ATPE2Controller
+from .atpe2.features import successful_results
 from hypermax.hyperparameter import Hyperparameter
 
 
@@ -35,6 +36,14 @@ class ATPE2Optimizer(OptimizationAlgorithmBase):
         boundary = len(results) // 5
         history = self.controller.filter_history(results, action, boundary)
         adaptive_locks = self.controller.locking_values(hyperparameterSpace, history, action, boundary)
+        if self.controller.last_record is not None:
+            self.controller.last_record.update(
+                {
+                    "successful_history_count": len(successful_results(results)),
+                    "filtered_history_count": len(history),
+                    "locked_parameters": sorted(adaptive_locks),
+                }
+            )
         locks = dict(adaptive_locks)
         locks.update(lockedValues or {})
         params = self._sample_tpe(

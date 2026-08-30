@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import hashlib
+from itertools import product
 import json
 import math
 from typing import Any
@@ -19,6 +20,20 @@ from .model import ATPE2ModelEnsemble
 
 MODEL_SCHEMA_VERSION = "atpe2-ensemble-v1"
 CONTROLLER_POLICY_VERSION = "atpe2-adaptive-only-v2"
+FACTORIZED_CONTROLLER_POLICY_VERSION = "atpe2-factorized-v1"
+ACTION_GROUPS: dict[str, tuple[str, ...]] = {
+    "search": ("gamma", "n_ei_candidates"),
+    "history": (
+        "history_keep_fraction",
+        "history_recency_bias",
+        "history_quality_bias",
+    ),
+    "locking": (
+        "secondary_fraction",
+        "secondary_lock_probability",
+        "secondary_top_fraction",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -60,11 +75,16 @@ class ATPE2Controller:
     def __init__(self, seed: int, ensemble: ATPE2ModelEnsemble | None = None):
         self.seed = int(seed)
         self.ensemble = ensemble if ensemble is not None else ATPE2ModelEnsemble.load_default()
+        extractor_class = getattr(self.ensemble, "feature_extractor_class", None)
         self.extractor = (
-            LegacyATPEFeatureExtractor()
-            if self.ensemble.manifest.get("feature_schema_version")
-            == LegacyATPEFeatureExtractor.version
-            else ATPE2FeatureExtractor()
+            extractor_class()
+            if extractor_class is not None
+            else (
+                LegacyATPEFeatureExtractor()
+                if self.ensemble.manifest.get("feature_schema_version")
+                == LegacyATPEFeatureExtractor.version
+                else ATPE2FeatureExtractor()
+            )
         )
         self._cached_boundary: int | None = None
         self._cached_action = ATPE2Action.anchor()
@@ -87,27 +107,35 @@ class ATPE2Controller:
             raise RuntimeError(
                 "ATPE2 requires a fitted, schema-compatible eight-model ensemble"
             )
-        candidates = self._candidate_actions(boundary)
-        matrix = np.column_stack(
-            (
-                np.repeat(context[None, :], len(candidates), axis=0),
-                np.asarray(
-                    [
-                        candidate.vector_for(self.ensemble.action_names)
-                        for candidate in candidates
-                    ]
-                ),
+        factorized = bool(getattr(self.ensemble, "is_factorized", False))
+        if factorized:
+            selected, decision = self._factorized_action(context, boundary)
+            expected_utility = float(decision["expected_utility"])
+            risk_adjusted_expected_utility = float(decision["score"])
+            uncertainty = float(decision["ensemble_disagreement"])
+        else:
+            candidates = self._candidate_actions(boundary)
+            matrix = np.column_stack(
+                (
+                    np.repeat(context[None, :], len(candidates), axis=0),
+                    np.asarray(
+                        [
+                            candidate.vector_for(self.ensemble.action_names)
+                            for candidate in candidates
+                        ]
+                    ),
+                )
             )
-        )
-        means, uncertainties = self.ensemble.predict(matrix)
-        utility = means - self.ensemble.uncertainty_penalty * uncertainties
-        if not np.all(np.isfinite(utility)):
-            raise FloatingPointError("ATPE2 produced non-finite risk-adjusted utility")
-        index = int(np.argmax(utility))
-        selected = candidates[index]
-        expected_utility = float(means[index])
-        risk_adjusted_expected_utility = float(utility[index])
-        uncertainty = float(uncertainties[index])
+            means, uncertainties = self.ensemble.predict(matrix)
+            utility = means - self.ensemble.uncertainty_penalty * uncertainties
+            if not np.all(np.isfinite(utility)):
+                raise FloatingPointError("ATPE2 produced non-finite risk-adjusted utility")
+            index = int(np.argmax(utility))
+            selected = candidates[index]
+            expected_utility = float(means[index])
+            risk_adjusted_expected_utility = float(utility[index])
+            uncertainty = float(uncertainties[index])
+            decision = {}
         outside_training_envelope = not self.ensemble.in_envelope(context)
 
         self._cached_boundary = boundary
@@ -124,14 +152,259 @@ class ATPE2Controller:
             "outside_training_envelope": outside_training_envelope,
             "seed": self.seed,
             "model_version": self.ensemble.manifest.get("model_version", MODEL_SCHEMA_VERSION),
-            "controller_policy_version": CONTROLLER_POLICY_VERSION,
+            "controller_policy_version": (
+                FACTORIZED_CONTROLLER_POLICY_VERSION
+                if factorized
+                else CONTROLLER_POLICY_VERSION
+            ),
             "feature_schema_version": self.extractor.version,
             "action_schema_version": ACTION_SCHEMA_VERSION,
             "feature_schema_hash": self.ensemble.manifest.get("feature_schema_hash"),
             "action_schema_hash": self.ensemble.manifest.get("action_schema_hash"),
+            **decision,
         }
         self.records.append(self.last_record)
         return selected
+
+    def _factorized_action(
+        self, context: np.ndarray, boundary: int
+    ) -> tuple[ATPE2Action, dict[str, Any]]:
+        runtime = self.ensemble.manifest.get("runtime", {})
+        retained = max(1, min(6, int(runtime.get("retained_per_group", 6))))
+        max_support = float(runtime.get("max_supported_distance", math.inf))
+        group_weights = {
+            **{name: 1.0 for name in ACTION_GROUPS},
+            **self.ensemble.manifest.get("score_composition", {}).get(
+                "group_weights", {}
+            ),
+        }
+        group_records: dict[str, dict[str, Any]] = {}
+        retained_actions: dict[str, list[tuple[ATPE2Action, float, float, float]]] = {}
+        anchor = ATPE2Action.anchor()
+        exploration = self._seeded_full_action(boundary)
+        exploration_advantages: dict[str, float] = {}
+        exploration_disagreements: dict[str, float] = {}
+
+        for group, names in ACTION_GROUPS.items():
+            proposals = self._group_proposals(group, boundary)
+            scoring_proposals = proposals + [exploration]
+            group_matrix = np.column_stack(
+                (
+                    np.repeat(context[None, :], len(scoring_proposals), axis=0),
+                    np.asarray(
+                        [proposal.vector_for(names) for proposal in scoring_proposals]
+                    ),
+                )
+            )
+            advantages, disagreements = self.ensemble.predict_group(group, group_matrix)
+            exploration_advantages[group] = float(advantages[-1])
+            exploration_disagreements[group] = float(disagreements[-1])
+            advantages = advantages[:-1]
+            disagreements = disagreements[:-1]
+            support_matrix = self._full_matrix(context, proposals)
+            support_costs = self.ensemble.support_cost(support_matrix)
+            ranked = sorted(
+                range(len(proposals)),
+                key=lambda index: (
+                    -float(advantages[index]),
+                    self._action_key(proposals[index]),
+                ),
+            )
+            supported = [index for index in ranked if support_costs[index] <= max_support]
+            if not supported:
+                supported = ranked[:1]
+            selected_indices = supported[:retained]
+            retained_actions[group] = [
+                (
+                    proposals[index],
+                    float(advantages[index]),
+                    float(disagreements[index]),
+                    float(support_costs[index]),
+                )
+                for index in selected_indices
+            ]
+            winner = ranked[0]
+            group_records[group] = {
+                "inactive": proposals[winner].vector_for(names).tolist()
+                == anchor.vector_for(names).tolist(),
+                "winning_advantage": float(advantages[winner]),
+                "winning_disagreement": float(disagreements[winner]),
+                "winning_support_cost": float(support_costs[winner]),
+                "retained_proposals": len(selected_indices),
+            }
+
+        combinations: dict[str, tuple[ATPE2Action, dict[str, float], dict[str, float]]] = {}
+        for entries in product(*(retained_actions[name] for name in ACTION_GROUPS)):
+            values = asdict(anchor)
+            advantages: dict[str, float] = {}
+            disagreements: dict[str, float] = {}
+            for group, entry in zip(ACTION_GROUPS, entries):
+                proposal, advantage, disagreement, _ = entry
+                for name in ACTION_GROUPS[group]:
+                    values[name] = getattr(proposal, name)
+                advantages[group] = advantage
+                disagreements[group] = disagreement
+            action = ATPE2Action(**values)
+            combinations.setdefault(
+                self._action_key(action), (action, advantages, disagreements)
+            )
+        ordered = sorted(
+            combinations.values(),
+            key=lambda entry: (
+                -sum(
+                    group_weights[group] * entry[1][group]
+                    for group in ACTION_GROUPS
+                ),
+                self._action_key(entry[0]),
+            ),
+        )[: min(64, int(runtime.get("beam_width", 64)))]
+
+        exploration_key = self._action_key(exploration)
+        if exploration_key not in {self._action_key(entry[0]) for entry in ordered}:
+            ordered.append((exploration, exploration_advantages, exploration_disagreements))
+        candidates = [entry[0] for entry in ordered]
+        full_matrix = self._full_matrix(context, candidates)
+        residual, residual_disagreement = self.ensemble.predict_residual(full_matrix)
+        downside_heads = self.ensemble.predict_downside(full_matrix)
+        downside = np.clip(
+            downside_heads["harm"]
+            + 0.5 * downside_heads["variability"]
+            + downside_heads["failure"],
+            0.0,
+            1.0,
+        )
+        support = self.ensemble.support_cost(full_matrix)
+        group_components = {
+            group: np.asarray([entry[1][group] for entry in ordered], dtype=float)
+            for group in ACTION_GROUPS
+        }
+        composition = self.ensemble.manifest.get("score_composition", {})
+        score = np.zeros(len(candidates), dtype=float)
+        for group in ACTION_GROUPS:
+            score += group_weights[group] * self._normalize_component(
+                group_components[group]
+            )
+        score += float(composition.get("residual_weight", 0.0)) * self._normalize_component(residual)
+        score -= float(composition.get("downside_weight", 0.0)) * self._normalize_component(downside)
+        score -= float(composition.get("support_weight", 0.0)) * self._normalize_component(support)
+        if not np.all(np.isfinite(score)):
+            raise FloatingPointError("ATPE2 factorized policy produced non-finite scores")
+        index = int(np.argmax(score))
+        selected = candidates[index]
+        group_sum = sum(
+            group_weights[group] * group_components[group][index]
+            for group in ACTION_GROUPS
+        )
+        expected_utility = float(group_sum + float(composition.get("residual_weight", 0.0)) * residual[index])
+        ensemble_disagreement = float(
+            np.mean(
+                [
+                    *[ordered[index][2][group] for group in ACTION_GROUPS],
+                    residual_disagreement[index],
+                ]
+            )
+        )
+        return selected, {
+            "score": float(score[index]),
+            "expected_utility": expected_utility,
+            "ensemble_disagreement": ensemble_disagreement,
+            "support_cost": float(support[index]),
+            "catastrophic_probability": float(
+                np.clip(downside_heads["catastrophic"][index], 0.0, 1.0)
+            ),
+            "downside_prediction": float(downside[index]),
+            "candidate_count": len(candidates),
+            "group_decisions": group_records,
+        }
+
+    def _group_proposals(self, group: str, boundary: int) -> list[ATPE2Action]:
+        names = ACTION_GROUPS[group]
+        sampler = qmc.Sobol(
+            d=len(names), scramble=True, seed=self._derived_seed(f"group-{group}", boundary)
+        )
+        points = sampler.random_base2(m=4)
+        actions = [self._action_from_coordinates(names, point) for point in points]
+        actions.append(ATPE2Action.anchor())
+        unique: dict[str, ATPE2Action] = {}
+        for action in actions:
+            unique.setdefault(self._action_key(action), action)
+        refill = 0
+        while len(unique) < 17:
+            fallback = qmc.Sobol(
+                d=len(names),
+                scramble=True,
+                seed=self._derived_seed(f"group-refill-{group}-{refill}", boundary),
+            ).random(1)[0]
+            action = self._action_from_coordinates(names, fallback)
+            unique.setdefault(self._action_key(action), action)
+            refill += 1
+            if refill > 4096:
+                raise RuntimeError(f"Could not construct 17 unique {group} proposals")
+        return list(unique.values())[:17]
+
+    def _seeded_full_action(self, boundary: int) -> ATPE2Action:
+        point = qmc.Sobol(
+            d=len(ATPE2Action.NAMES),
+            scramble=True,
+            seed=self._derived_seed("full-exploration", boundary),
+        ).random(1)[0]
+        return self._action_from_coordinates(ATPE2Action.NAMES, point)
+
+    def _action_from_coordinates(
+        self, names: tuple[str, ...] | list[str], coordinates: np.ndarray
+    ) -> ATPE2Action:
+        values = asdict(ATPE2Action.anchor())
+        ranges = {
+            name: {
+                **ACTION_DOMAINS[name],
+                **self.ensemble.manifest.get("action_ranges", {}).get(name, {}),
+            }
+            for name in names
+        }
+        for name, coordinate in zip(names, coordinates):
+            domain = ranges[name]
+            minimum, maximum = float(domain["minimum"]), float(domain["maximum"])
+            if domain.get("scale") == "log":
+                value = math.exp(
+                    math.log(minimum)
+                    + float(coordinate) * (math.log(maximum) - math.log(minimum))
+                )
+            else:
+                value = minimum + float(coordinate) * (maximum - minimum)
+            values[name] = (
+                int(np.clip(round(value), int(minimum), int(maximum)))
+                if domain.get("type") == "integer"
+                else float(value)
+            )
+        return ATPE2Action(**values)
+
+    @staticmethod
+    def _normalize_component(values: np.ndarray) -> np.ndarray:
+        values = np.asarray(values, dtype=float)
+        if len(values) < 2:
+            return np.zeros_like(values)
+        median = float(np.median(values))
+        q25, q75 = np.quantile(values, [0.25, 0.75])
+        scale = float(q75 - q25)
+        if not math.isfinite(scale) or scale <= np.finfo(float).eps:
+            scale = float(np.std(values))
+        if not math.isfinite(scale) or scale <= np.finfo(float).eps:
+            return np.zeros_like(values)
+        return np.clip((values - median) / scale, -5.0, 5.0)
+
+    def _full_matrix(
+        self, context: np.ndarray, actions: list[ATPE2Action]
+    ) -> np.ndarray:
+        return np.column_stack(
+            (
+                np.repeat(context[None, :], len(actions), axis=0),
+                np.asarray([action.vector() for action in actions]),
+            )
+        )
+
+    @staticmethod
+    def _action_key(action: ATPE2Action) -> str:
+        return json.dumps(asdict(action), sort_keys=True, separators=(",", ":"))
 
     def _candidate_actions(self, boundary: int) -> list[ATPE2Action]:
         sampler = qmc.Sobol(d=8, scramble=True, seed=self._derived_seed("sobol", boundary))

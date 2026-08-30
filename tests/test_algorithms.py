@@ -107,3 +107,41 @@ def test_legacy_random_locking_reads_normal_and_randint_parameter_configs():
     integer = Hyperparameter({"type": "number", "mode": "randint", "max": 4})
     assert np.isfinite(optimizer.chooseRandomValueForParameter(normal))
     assert optimizer.chooseRandomValueForParameter(integer) in range(4)
+
+
+def test_legacy_atpe_seed_is_reproducible_without_global_rng_state():
+    rows = [
+        {
+            "trial": index,
+            "status": "ok",
+            "loss": float((index - 7) ** 2 - 10),
+            "x": float((index % 10) / 3 - 1.5),
+            "kind": ["a", "b"][index % 2],
+        }
+        for index in range(20)
+    ]
+    optimizer = ATPEOptimizer(seed=19)
+    first = optimizer.recommendNextParameters(SPACE, rows, [])
+    random.random()
+    np.random.random()
+    optimizer.set_seed(19)
+    second = optimizer.recommendNextParameters(SPACE, rows, [])
+
+    assert first == second
+
+
+def test_legacy_atpe_counts_successful_zero_losses_after_initialization():
+    rows = [
+        {
+            "trial": index,
+            "status": "ok",
+            "loss": 0.0,
+            "x": float(index) / 10,
+            "kind": ["a", "b"][index % 2],
+        }
+        for index in range(10)
+    ]
+    optimizer = ATPEOptimizer(seed=23)
+    optimizer.recommendNextParameters(SPACE, rows, [])
+
+    assert optimizer.atpeParamDetails

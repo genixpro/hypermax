@@ -151,3 +151,40 @@ def synthetic_tasks(seed: int, instances_per_family: int = 4) -> list[SyntheticT
                 )
             )
     return tasks
+
+
+def factorized_training_tasks(seed: int, total: int = 192) -> list[SyntheticTask]:
+    """Return the predeclared factorized mix (about 40% hierarchical).
+
+    For the protocol size of 192 this is 77 hierarchical tasks and 23 from
+    each of the five remaining families.  The largest-remainder allocation is
+    deterministic for other miniature/test sizes as well.
+    """
+    if total < 6:
+        raise ValueError("factorized task mix requires at least one task per family")
+    templates = {task.family: task for task in pilot_tasks(seed)}
+    families = sorted(family for family in templates if family != "hierarchical")
+    hierarchical_count = int(round(0.40 * total))
+    remaining = total - hierarchical_count
+    base, extra = divmod(remaining, len(families))
+    counts = {
+        "hierarchical": hierarchical_count,
+        **{
+            family: base + int(index < extra)
+            for index, family in enumerate(families)
+        },
+    }
+    tasks: list[SyntheticTask] = []
+    family_order = ["hierarchical", *families]
+    for family_index, family in enumerate(family_order):
+        template = templates[family]
+        for instance in range(counts[family]):
+            task_seed = seed + family_index * 1_000_000 + instance * 1_009
+            tasks.append(
+                replace(
+                    template,
+                    task_id=f"{family}-{seed}-factorized-{instance}",
+                    seed=task_seed,
+                )
+            )
+    return tasks

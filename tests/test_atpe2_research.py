@@ -1,6 +1,8 @@
 import json
 import math
+import sqlite3
 
+import numpy as np
 import pytest
 
 from hypermax.algorithms.atpe2.controller import ATPE2Action, ATPE2Controller
@@ -8,9 +10,21 @@ from hypermax.algorithms.atpe2.model import ATPE2ModelEnsemble
 from research.atpe2.database import ResearchStore, SCHEMA_VERSION
 from research.atpe2.labels import label_state
 from research.atpe2.iterate import summarize_iteration
+from research.atpe2.compare import compare_reports
 from research.atpe2 import generate as generate_module
 from research.atpe2.generate import _third_repeat_candidates, action_candidates, rollout_action
+from research.atpe2.acquisition import (
+    acquisition_lineage,
+    canonical_action as canonical_structured_action,
+    structured_action_candidates,
+)
+from research.atpe2.factorized import (
+    derive_factorized_rows,
+    robust_support_artifact,
+)
+from research.atpe2.factorized_screen import assess_five_quick_screens
 from research.atpe2.train import grouped_split
+from research.atpe2.train_factorized import train_factorized
 from research.atpe2.gates import (
     configurations_equivalent,
     gate2_report,
@@ -32,7 +46,15 @@ def test_research_store_is_resumable_and_retains_every_configuration(tmp_path):
     database = tmp_path / "research.sqlite"
     with ResearchStore(database) as store:
         store.upsert_task("task", "smooth", {"space": {}}, "generator-v1")
-        state_id = store.upsert_state("task", "random", "lineage", 10, [], {"successful_count": 10})
+        state_id = store.upsert_state(
+            "task",
+            "random",
+            "lineage",
+            10,
+            [],
+            {"successful_count": 10},
+            acquisition_metadata={"implementation_version": "test"},
+        )
         record = {
             "state_id": state_id,
             "task_id": "task",
@@ -46,6 +68,8 @@ def test_research_store_is_resumable_and_retains_every_configuration(tmp_path):
             "timing": {"seconds": 1},
             "dependency_versions": {"python": "test"},
             "utility": 0.5,
+            "acquisition_role": "group_isolated_search_sobol",
+            "varied_groups": ["search"],
         }
         assert store.add_evaluation(record) is True
         assert store.add_evaluation(record) is False
@@ -57,10 +81,58 @@ def test_research_store_is_resumable_and_retains_every_configuration(tmp_path):
         # State payloads are parsed once and shared across rollout rows.
         assert rows[0]["history"] is rows[1]["history"]
         assert rows[0]["context"] is rows[1]["context"]
+        assert rows[0]["acquisition_role"] == "group_isolated_search_sobol"
+        assert rows[0]["varied_groups"] == ["search"]
+        assert rows[0]["acquisition_metadata"]["implementation_version"] == "test"
         assert json.loads(store.connection.execute("SELECT value_json FROM metadata WHERE key='schema_version'").fetchone()[0]) == SCHEMA_VERSION
 
     with ResearchStore(database) as reopened:
         assert len(reopened.state_evaluations(state_id)) == 2
+
+
+def test_research_store_migrates_v1_database_without_losing_rows(tmp_path):
+    database = tmp_path / "old.sqlite"
+    connection = sqlite3.connect(database)
+    connection.executescript(
+        """
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value_json TEXT NOT NULL);
+        CREATE TABLE tasks (
+            task_id TEXT PRIMARY KEY, family TEXT NOT NULL,
+            specification_json TEXT NOT NULL, generator_version TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE states (
+            state_id TEXT PRIMARY KEY, task_id TEXT NOT NULL,
+            trajectory_method TEXT NOT NULL, trajectory_lineage TEXT NOT NULL,
+            checkpoint INTEGER NOT NULL, history_json TEXT NOT NULL,
+            context_json TEXT NOT NULL, acquisition_round INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            UNIQUE(task_id, trajectory_lineage, checkpoint, acquisition_round)
+        );
+        CREATE TABLE evaluations (
+            evaluation_id TEXT PRIMARY KEY, state_id TEXT NOT NULL,
+            task_id TEXT NOT NULL, generator_version TEXT NOT NULL,
+            history_lineage TEXT NOT NULL, configuration_json TEXT NOT NULL,
+            configuration_hash TEXT NOT NULL, rollout_seed INTEGER NOT NULL,
+            repeat_index INTEGER NOT NULL, incumbent_curve_json TEXT NOT NULL,
+            failures_json TEXT NOT NULL, timing_json TEXT NOT NULL,
+            dependency_versions_json TEXT NOT NULL, utility REAL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(state_id, configuration_hash, rollout_seed, repeat_index)
+        );
+        """
+    )
+    connection.close()
+
+    with ResearchStore(database) as store:
+        state_columns = {
+            row["name"] for row in store.connection.execute("PRAGMA table_info(states)")
+        }
+        evaluation_columns = {
+            row["name"] for row in store.connection.execute("PRAGMA table_info(evaluations)")
+        }
+        assert "acquisition_metadata_json" in state_columns
+        assert {"acquisition_role", "varied_groups_json"}.issubset(evaluation_columns)
 
 
 def test_scale_free_label_ranks_each_paired_step():
@@ -98,6 +170,283 @@ def test_research_action_acquisition_obeys_evidence_expanded_ranges():
     )
     assert all(2.0 <= action.gamma <= 3.0 for action in actions[:-1])
     assert actions[-1] == ATPE2Action.anchor()
+
+
+def test_structured_round_one_has_exact_roles_isolation_and_deterministic_refill():
+    class Ensemble:
+        is_factorized = False
+        action_names = ATPE2Action.NAMES
+
+        def predict(self, matrix):
+            # Force deterministic ties so canonical tie-breaking is exercised.
+            return np.zeros(len(matrix)), np.zeros(len(matrix))
+
+    context = np.zeros(32)
+    first = structured_action_candidates(
+        19, ATPE2Action.anchor(), Ensemble(), context
+    )
+    second = structured_action_candidates(
+        19, ATPE2Action.anchor(), Ensemble(), context
+    )
+    keys = [canonical_structured_action(record.action) for record in first]
+    roles = [record.role for record in first]
+
+    assert len(first) == len(set(keys)) == 65
+    assert [record.lineage_record() for record in first] == [
+        record.lineage_record() for record in second
+    ]
+    assert roles.count("neutral_anchor") == 1
+    assert roles.count("provisional_policy") == 1
+    assert sum(role.startswith("group_isolated_search") for role in roles) == 8
+    assert sum(role.startswith("group_isolated_history") for role in roles) == 12
+    assert sum(role.startswith("group_isolated_locking") for role in roles) == 12
+    assert sum(role.startswith("two_group") for role in roles) == 18
+    assert roles.count("full_action_regime") == 8
+    assert roles.count("highest_disagreement") == 5
+    for record in first:
+        if len(record.varied_groups) == 1:
+            group = record.varied_groups[0]
+            neutral = ATPE2Action.anchor()
+            for other_group in {"search", "history", "locking"} - {group}:
+                names = {
+                    "search": ("gamma", "n_ei_candidates"),
+                    "history": ("history_keep_fraction", "history_recency_bias", "history_quality_bias"),
+                    "locking": ("secondary_fraction", "secondary_lock_probability", "secondary_top_fraction"),
+                }[other_group]
+                assert record.action.vector_for(names).tolist() == neutral.vector_for(names).tolist()
+
+
+def test_structured_lineage_hashes_manifest_and_ordered_mapping():
+    class Ensemble:
+        is_factorized = False
+        action_names = ATPE2Action.NAMES
+
+        def predict(self, matrix):
+            return np.zeros(len(matrix)), np.arange(len(matrix), dtype=float)
+
+    records = structured_action_candidates(
+        7, ATPE2Action(gamma=0.5), Ensemble(), np.zeros(32)
+    )
+    first = acquisition_lineage(records, "a" * 64)
+    changed_manifest = acquisition_lineage(records, "b" * 64)
+    changed_order = acquisition_lineage(list(reversed(records)), "a" * 64)
+
+    assert first != changed_manifest
+    assert first != changed_order
+    assert len(first["ordered_role_action_mapping"]) == 65
+
+
+def test_factorized_targets_exclude_third_repeats_and_decompose_interactions():
+    anchor = ATPE2Action.anchor()
+    search = ATPE2Action(gamma=0.5)
+    history = ATPE2Action(history_keep_fraction=0.5)
+    combined = ATPE2Action(gamma=0.5, history_keep_fraction=0.5)
+    configurations = [
+        (anchor, "neutral_anchor", (), 0.50),
+        (search, "group_isolated_search_sobol", ("search",), 0.60),
+        (history, "group_isolated_history_sobol", ("history",), 0.55),
+        (combined, "two_group_search_history", ("search", "history"), 0.70),
+    ]
+    rows = []
+    for action, role, varied, utility in configurations:
+        for repeat in range(3):
+            rows.append(
+                {
+                    "state_id": "state",
+                    "task_id": "task",
+                    "family": "smooth",
+                    "trajectory_lineage": "lineage",
+                    "checkpoint": 20,
+                    "acquisition_round": 1,
+                    "context": {},
+                    "history": [],
+                    "space": {},
+                    "configuration": action.__dict__,
+                    "acquisition_role": role,
+                    "varied_groups": varied,
+                    "repeat_index": repeat,
+                    "utility": -999.0 if repeat == 2 else utility,
+                    "failures": [] if action != combined else [{"step": 1}],
+                }
+            )
+    derived = derive_factorized_rows(rows)
+    pair = next(row for row in derived if row["configuration"] == combined.__dict__)
+
+    assert pair["utility"] == pytest.approx(0.70)
+    assert pair["additive_prediction"] == pytest.approx(0.65)
+    assert pair["residual_target"] == pytest.approx(0.05)
+    assert pair["failed_step_fraction"] == pytest.approx(0.2)
+    assert pair["catastrophic_label"] == 1
+
+
+def test_support_artifact_is_deterministic_stratified_and_finite():
+    matrix = np.arange(600 * 4, dtype=float).reshape(600, 4)
+    tasks = [f"task-{index % 12}" for index in range(600)]
+    first = robust_support_artifact(matrix, tasks, seed=3)
+    second = robust_support_artifact(matrix, tasks, seed=3)
+
+    assert first == second
+    assert first["representative_count"] == 512
+    assert np.all(np.isfinite(first["representatives"]))
+    assert np.all(np.asarray(first["scale"]) > 0)
+    assert np.all(np.diff(first["calibration"]["distance"]) >= 0)
+
+
+@pytest.mark.slow
+def test_factorized_miniature_database_fit_runtime_and_reload(tmp_path):
+    class JointStub:
+        is_factorized = False
+        action_names = ATPE2Action.NAMES
+
+        def predict(self, matrix):
+            return np.zeros(len(matrix)), np.zeros(len(matrix))
+
+    database = tmp_path / "miniature.sqlite"
+    space = {"type": "object", "properties": {}}
+    context = {
+        "__feature_schema_version": "atpe2-context-v4",
+        **generate_module.ATPE2ContextV4FeatureExtractor().extract(space, [], []),
+    }
+    with ResearchStore(database) as store:
+        for task_index in range(6):
+            task_id = f"task-{task_index}"
+            store.upsert_task(
+                task_id,
+                "hierarchical" if task_index < 3 else "smooth",
+                {"task_id": task_id, "family": "smooth", "space": space, "seed": task_index},
+                "miniature",
+            )
+            for round_index in (0, 1):
+                state_id = store.upsert_state(
+                    task_id,
+                    "tpe",
+                    f"lineage-{task_index}-{round_index}",
+                    20,
+                    [],
+                    context,
+                    round_index,
+                )
+                if round_index == 0:
+                    records = [
+                        (action, "neutral_anchor" if action == ATPE2Action.anchor() else "round_zero_joint_sobol", () if action == ATPE2Action.anchor() else ("search", "history", "locking"))
+                        for action in action_candidates(task_index)
+                    ]
+                else:
+                    records = [
+                        (record.action, record.role, record.varied_groups)
+                        for record in structured_action_candidates(
+                            task_index,
+                            ATPE2Action.anchor(),
+                            JointStub(),
+                            np.zeros(32),
+                        )
+                    ]
+                for action, role, varied in records:
+                    vector = action.vector()
+                    utility = float(
+                        np.clip(
+                            0.60
+                            - 0.02 * abs(action.gamma - 0.5)
+                            - 0.001 * abs(action.n_ei_candidates - 32)
+                            + 0.01 * action.history_quality_bias
+                            - 0.02 * action.secondary_lock_probability
+                            + 0.005 * action.gamma * action.history_keep_fraction,
+                            0.0,
+                            1.0,
+                        )
+                    )
+                    for repeat in range(2):
+                        store.add_evaluation(
+                            {
+                                "state_id": state_id,
+                                "task_id": task_id,
+                                "generator_version": "miniature",
+                                "history_lineage": f"lineage-{task_index}-{round_index}",
+                                "configuration": action.__dict__,
+                                "rollout_seed": task_index * 100 + repeat,
+                                "repeat_index": repeat,
+                                "incumbent_curve": [1.0 - utility] * 5,
+                                "failures": [],
+                                "timing": {},
+                                "dependency_versions": {},
+                                "utility": utility,
+                                "acquisition_role": role,
+                                "varied_groups": varied,
+                            }
+                        )
+    output = tmp_path / "model"
+    manifest = train_factorized(
+        database,
+        output,
+        seed=5,
+        branch_name="context_v4",
+        trees=8,
+        leaf_index=0,
+    )
+    loaded = ATPE2ModelEnsemble.load(output / "manifest.json")
+    controller = ATPE2Controller(9, ensemble=loaded)
+    action = controller.action_for(space, [], [])
+
+    assert manifest["schema_version"] == "atpe2-factorized-manifest-v1"
+    assert len(manifest["members"]) == 8
+    assert loaded.research_ready
+    assert isinstance(action, ATPE2Action)
+    assert controller.last_record["decision_mode"] == "adaptive_model"
+    assert controller.last_record["fallback_reason"] is None
+
+
+def test_five_quick_assessment_enforces_seed_family_classic_and_overhead_gates():
+    def report(seed, improvement, regret, overhead):
+        rows = []
+        for family_index, family in enumerate(("smooth", "rugged", "interaction", "hierarchical")):
+            common = {
+                "task": f"{family}-{seed}",
+                "family": family,
+                "trajectory_lineage": f"lineage-{family}-{seed}",
+                "checkpoint": 25,
+                "seed": seed * 100 + family_index,
+            }
+            rows.extend(
+                [
+                    {
+                        **common,
+                        "optimizer": "atpe2",
+                        "normalized_regret": regret,
+                        "scale_normalized_improvement_auc": improvement,
+                    },
+                    {
+                        **common,
+                        "optimizer": "hyperopt_tpe",
+                        "normalized_regret": 0.0,
+                        "scale_normalized_improvement_auc": 0.0,
+                    },
+                    {
+                        **common,
+                        "optimizer": "legacy_atpe",
+                        "normalized_regret": 0.0,
+                        "scale_normalized_improvement_auc": 0.1,
+                    },
+                ]
+            )
+        return {
+            "seed": seed,
+            "rows": rows,
+            "summary": {
+                "screen_passed": True,
+                "checks": {"all_atpe2_blocks_have_adaptive_decisions": True},
+                "optimizer_overhead": {
+                    "atpe2": {"median_block_seconds": overhead}
+                },
+            },
+        }
+
+    candidates = [report(seed, 0.06, -0.01, 1.2) for seed in (7, 19, 23, 31, 47)]
+    incumbents = [report(seed, 0.0, 0.0, 1.0) for seed in (7, 19, 23, 31, 47)]
+    assessment = assess_five_quick_screens(candidates, incumbents)
+
+    assert assessment["passed"]
+    assert assessment["classic_gap"]["deficit_closure_fraction"] >= 0.5
+    assert assessment["controller_overhead_ratio"] == pytest.approx(1.2)
 
 
 def test_third_repeat_selection_can_be_recomputed_from_paired_rows_only():
@@ -403,6 +752,43 @@ def test_iteration_summary_is_directional_and_requires_adaptive_diversity():
     assert summary["screen_passed"] is True
     assert summary["adaptive_telemetry"]["decision_count"] == 2
     assert summary["adaptive_telemetry"]["distinct_configurations"] == 2
+
+
+def test_iteration_comparison_uses_absolute_paired_improvement_not_rank_scores():
+    families = ("smooth", "rugged", "interaction", "hierarchical")
+
+    def report(candidate_delta=0.0):
+        return {
+            "seed": 7,
+            "model_manifest_sha256": f"model-{candidate_delta}",
+            "summary": {
+                "optimizer_overhead": {
+                    "atpe2": {"median_block_seconds": 1.0 + candidate_delta}
+                }
+            },
+            "rows": [
+                {
+                    "task": f"{family}-task",
+                    "family": family,
+                    "trajectory_method": "tpe",
+                    "trajectory_lineage": f"{family}-lineage",
+                    "checkpoint": 25,
+                    "seed": index,
+                    "optimizer": "atpe2",
+                    "initial_incumbent": 10.0,
+                    "incumbent_curve": [9.0 - candidate_delta],
+                    "scale_normalized_improvement_auc": 0.1 + candidate_delta,
+                }
+                for index, family in enumerate(families)
+            ],
+        }
+
+    comparison = compare_reports(report(), report(0.05), seed=9)
+
+    assert comparison["performance_family_candidate_minus_baseline"]["wins"] == 4
+    assert comparison["performance_family_candidate_minus_baseline"]["mean_delta"] == pytest.approx(0.05)
+    assert comparison["task_median_95_percent_interval"] == pytest.approx((0.05, 0.05))
+    assert comparison["exact_incumbent_curve_matches"] == 0
 
 
 def test_synthetic_suite_contains_zero_plateau_and_irrelevant_dimensions():

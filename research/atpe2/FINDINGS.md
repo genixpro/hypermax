@@ -150,3 +150,39 @@ The next research-grade sequence is:
 4. start a fresh YAHPO/HPO-B database bound to that exact frozen manifest;
 5. make no performance claim until the complete Gate 3 report passes its
    predeclared statistical checks.
+
+## Eight-knob iteration 1
+
+The first post-freeze iteration retained all eight controller actions and fit a
+compact eight-member, 16-tree ensemble against the complete Gate 1 pilot data.
+It scored 64 Sobol actions plus the anchor per boundary. This is a research
+candidate only: it contains acquisition round 0 and has not passed a new Gate 2.
+
+On the reusable seed-7 screen it beat/tied/lost TPE on 66/109/41 blocks, versus
+44/135/37 for the frozen two-knob policy. All four performance families had
+negative mean paired normalized-regret deltas against TPE. However, a direct
+paired comparison against the frozen policy was inconclusive: 54/46/44 blocks,
+mean absolute improvement-AUC delta -0.01014, and an eight-task interval of
+`[-0.01188, 0.00665]`. The loss was concentrated in rugged tasks.
+
+On fresh seed 19 the candidate failed the broad development screen because
+hierarchical mean paired regret against TPE was +0.17388. Directly against the
+frozen policy it was again effectively tied: 52/51/41 blocks, mean delta
+-0.00138, and interval `[-0.00131, 0.00031]`.
+
+Fresh seed 23 passed. It beat/tied/lost TPE on 60/114/42 blocks, and every
+performance family had lower mean paired regret than TPE. Across seeds 7, 19,
+and 23, the full controller beat/tied/lost TPE on 185/341/122 rank-utility
+blocks. The task-median improvement-AUC interval across the 24 development
+tasks was `[0.00002, 0.00821]`, while hierarchical mean paired regret was still
+slightly worse at +0.02787. These repeated development tasks remain too narrow
+for a publication claim.
+
+The full controls were behaviorally active. On seed 19, 323 of 432 controller
+decisions produced effective locks and 356 filtered history; on seed 23 the
+corresponding counts were 319 and 341. Median retained-history fractions were
+0.838 and 0.881. The direct two-seed comparison against the frozen controller
+was 106/97/85 blocks with mean improvement-AUC delta -0.00576, so the result
+rejects this candidate as a runtime replacement but supports continued
+full-action work with broader hierarchical training states and a complete
+aggregation round.

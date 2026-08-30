@@ -451,17 +451,28 @@ def main(argv=None):
     parser.add_argument("--runtime-candidate-count", type=int, default=1024)
     args = parser.parse_args(argv)
     action_schema = json.loads(args.action_schema.read_text()) if args.action_schema else None
+    manifest = train_ensemble(
+        args.database,
+        args.output,
+        args.seed,
+        action_schema,
+        args.feature_schema,
+        args.n_estimators,
+        args.runtime_candidate_count,
+    )
     print(
         json.dumps(
-            train_ensemble(
-                args.database,
-                args.output,
-                args.seed,
-                action_schema,
-                args.feature_schema,
-                args.n_estimators,
-                args.runtime_candidate_count,
-            ),
+            {
+                "schema_version": manifest["schema_version"],
+                "model_version": manifest["model_version"],
+                "status": manifest["status"],
+                "retained_action_names": manifest["retained_action_names"],
+                "runtime_candidate_count": manifest["runtime_candidate_count"],
+                "validation": manifest["validation"],
+                "model_training": manifest["model_training"],
+                "dataset_aggregation_rounds": manifest["dataset_aggregation_rounds"],
+                "output": str(args.output),
+            },
             indent=2,
         )
     )

@@ -11,7 +11,7 @@ import sqlite3
 from typing import Any, Iterator
 
 
-SCHEMA_VERSION = "atpe2-research-sqlite-v1"
+SCHEMA_VERSION = "atpe2-research-sqlite-v2"
 
 
 def canonical_json(value: Any) -> str:
@@ -68,6 +68,7 @@ class ResearchStore:
                 checkpoint INTEGER NOT NULL,
                 history_json TEXT NOT NULL,
                 context_json TEXT NOT NULL,
+                acquisition_metadata_json TEXT NOT NULL DEFAULT '{}',
                 acquisition_round INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'pending',
                 UNIQUE(task_id, trajectory_lineage, checkpoint, acquisition_round)
@@ -86,6 +87,8 @@ class ResearchStore:
                 failures_json TEXT NOT NULL,
                 timing_json TEXT NOT NULL,
                 dependency_versions_json TEXT NOT NULL,
+                acquisition_role TEXT NOT NULL DEFAULT 'legacy_joint',
+                varied_groups_json TEXT NOT NULL DEFAULT '[]',
                 utility REAL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(state_id, configuration_hash, rollout_seed, repeat_index)
@@ -94,6 +97,27 @@ class ResearchStore:
             CREATE INDEX IF NOT EXISTS states_lineage ON states(task_id, trajectory_lineage);
             """
         )
+        # SQLite has no portable ``ADD COLUMN IF NOT EXISTS``.  These guarded
+        # migrations keep pristine v1 research databases readable and resumable.
+        state_columns = {
+            row["name"] for row in self.connection.execute("PRAGMA table_info(states)")
+        }
+        if "acquisition_metadata_json" not in state_columns:
+            self.connection.execute(
+                "ALTER TABLE states ADD COLUMN acquisition_metadata_json TEXT NOT NULL DEFAULT '{}'"
+            )
+        evaluation_columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(evaluations)")
+        }
+        if "acquisition_role" not in evaluation_columns:
+            self.connection.execute(
+                "ALTER TABLE evaluations ADD COLUMN acquisition_role TEXT NOT NULL DEFAULT 'legacy_joint'"
+            )
+        if "varied_groups_json" not in evaluation_columns:
+            self.connection.execute(
+                "ALTER TABLE evaluations ADD COLUMN varied_groups_json TEXT NOT NULL DEFAULT '[]'"
+            )
         self.set_metadata("schema_version", SCHEMA_VERSION)
 
     def set_metadata(self, key: str, value: Any) -> None:
@@ -131,16 +155,20 @@ class ResearchStore:
         history: list[dict],
         context: dict,
         acquisition_round: int = 0,
+        acquisition_metadata: dict[str, Any] | None = None,
     ) -> str:
         identity = [task_id, lineage, checkpoint, acquisition_round]
         state_id = content_hash(identity)
         self.connection.execute(
             """INSERT INTO states(
                 state_id, task_id, trajectory_method, trajectory_lineage, checkpoint,
-                history_json, context_json, acquisition_round
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                history_json, context_json, acquisition_metadata_json,
+                acquisition_round
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(state_id) DO UPDATE SET
-                history_json=excluded.history_json, context_json=excluded.context_json
+                history_json=excluded.history_json,
+                context_json=excluded.context_json,
+                acquisition_metadata_json=excluded.acquisition_metadata_json
             """,
             (
                 state_id,
@@ -150,6 +178,7 @@ class ResearchStore:
                 checkpoint,
                 canonical_json(history),
                 canonical_json(context),
+                canonical_json(acquisition_metadata or {}),
                 acquisition_round,
             ),
         )
@@ -166,8 +195,9 @@ class ResearchStore:
                 evaluation_id, state_id, task_id, generator_version, history_lineage,
                 configuration_json, configuration_hash, rollout_seed, repeat_index,
                 incumbent_curve_json, failures_json, timing_json,
-                dependency_versions_json, utility
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                dependency_versions_json, acquisition_role, varied_groups_json,
+                utility
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 evaluation_id,
                 record["state_id"],
@@ -182,6 +212,8 @@ class ResearchStore:
                 canonical_json(record.get("failures", [])),
                 canonical_json(record.get("timing", {})),
                 canonical_json(record.get("dependency_versions", {})),
+                str(record.get("acquisition_role", "legacy_joint")),
+                canonical_json(record.get("varied_groups", [])),
                 record.get("utility"),
             ),
         )
@@ -227,6 +259,8 @@ class ResearchStore:
                 "failures": json.loads(row["failures_json"]),
                 "timing": json.loads(row["timing_json"]),
                 "dependency_versions": json.loads(row["dependency_versions_json"]),
+                "acquisition_role": row["acquisition_role"],
+                "varied_groups": json.loads(row["varied_groups_json"]),
             }
             for row in rows
         ]
@@ -244,8 +278,9 @@ class ResearchStore:
         selected_tasks = set(task_ids) if task_ids is not None else None
         states: dict[str, dict[str, Any]] = {}
         state_cursor = self.connection.execute(
-            """SELECT s.state_id,s.task_id,s.trajectory_lineage,
+            """SELECT s.state_id,s.task_id,s.trajectory_lineage,s.checkpoint,
                       s.acquisition_round,s.context_json,s.history_json,
+                      s.acquisition_metadata_json,
                       t.family,t.specification_json
                FROM states s JOIN tasks t ON t.task_id=s.task_id
                ORDER BY s.state_id"""
@@ -258,14 +293,18 @@ class ResearchStore:
                 "task_id": row["task_id"],
                 "family": row["family"],
                 "trajectory_lineage": row["trajectory_lineage"],
+                "checkpoint": row["checkpoint"],
                 "acquisition_round": row["acquisition_round"],
+                "acquisition_metadata": json.loads(row["acquisition_metadata_json"]),
                 "context": json.loads(row["context_json"]),
                 "history": json.loads(row["history_json"]),
                 "space": json.loads(row["specification_json"]).get("space", {}),
             }
         output = []
         evaluation_cursor = self.connection.execute(
-            """SELECT state_id,configuration_json,utility
+            """SELECT state_id,configuration_json,utility,rollout_seed,
+                      repeat_index,incumbent_curve_json,failures_json,
+                      acquisition_role,varied_groups_json
                FROM evaluations WHERE utility IS NOT NULL
                ORDER BY state_id,configuration_hash,rollout_seed,repeat_index"""
         )
@@ -278,6 +317,12 @@ class ResearchStore:
                     **state,
                     "configuration": json.loads(row["configuration_json"]),
                     "utility": float(row["utility"]),
+                    "rollout_seed": int(row["rollout_seed"]),
+                    "repeat_index": int(row["repeat_index"]),
+                    "incumbent_curve": json.loads(row["incumbent_curve_json"]),
+                    "failures": json.loads(row["failures_json"]),
+                    "acquisition_role": row["acquisition_role"],
+                    "varied_groups": json.loads(row["varied_groups_json"]),
                 }
             )
         return output

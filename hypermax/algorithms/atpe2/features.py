@@ -18,6 +18,7 @@ from scipy import stats
 
 
 FEATURE_SCHEMA_VERSION = "atpe2-context-v2"
+FEATURE_SCHEMA_V4_VERSION = "atpe2-context-v4"
 
 
 @dataclass(frozen=True)
@@ -292,7 +293,10 @@ class ATPE2FeatureExtractor:
             "constant_loss_indicator": float(constant),
             "small_history_indicator": float(len(successes) < 12),
         }
-        return {name: self._finite(values[name]) for name in self.FEATURE_NAMES}
+        return {
+            name: self._finite(values[name])
+            for name in ATPE2FeatureExtractor.FEATURE_NAMES
+        }
 
     def vector(self, *args: Any, **kwargs: Any) -> np.ndarray:
         features = self.extract(*args, **kwargs)
@@ -372,3 +376,123 @@ class ATPE2FeatureExtractor:
         incumbents = np.minimum.accumulate(losses)
         changes = np.count_nonzero(np.diff(incumbents) < 0)
         return float(1.0 - changes / (len(losses) - 1))
+
+
+class ATPE2ContextV4FeatureExtractor(ATPE2FeatureExtractor):
+    """The v2 context plus local relevance, progress, and support summaries.
+
+    V2 remains a separate class because its frozen manifests are part of the
+    runtime compatibility contract.  V4 deliberately appends features so an
+    older model can never silently consume a different column layout.
+    """
+
+    V4_FEATURE_NAMES = (
+        "recent_10_relevance_mean",
+        "recent_25pct_relevance_mean",
+        "top_quartile_relevance_mean",
+        "global_recent_relevance_stability",
+        "recent_10_improvement_density",
+        "recent_25pct_improvement_density",
+        "incumbent_age_fraction",
+        "active_support_min",
+        "active_support_q25",
+    )
+    FEATURE_NAMES = ATPE2FeatureExtractor.FEATURE_NAMES + V4_FEATURE_NAMES
+    version = FEATURE_SCHEMA_V4_VERSION
+
+    def extract(
+        self,
+        space: dict[str, Any],
+        results: Iterable[dict[str, Any]],
+        current_trials: Iterable[dict[str, Any]] = (),
+    ) -> dict[str, float]:
+        results = list(results)
+        current_trials = list(current_trials)
+        base = super().extract(space, results, current_trials)
+        descriptors = describe_space(space)
+        successes = successful_results(results)
+        recent_10 = successes[-min(10, len(successes)) :]
+        recent_fraction_count = max(1, int(math.ceil(0.25 * len(successes)))) if successes else 0
+        recent_fraction = successes[-recent_fraction_count:] if recent_fraction_count else []
+        top_count = max(1, int(math.ceil(0.25 * len(successes)))) if successes else 0
+        top_quartile = (
+            sorted(successes, key=lambda row: float(row["loss"]))[:top_count]
+            if top_count
+            else []
+        )
+
+        global_relevance = parameter_relevance(descriptors, successes)
+        recent_10_relevance = parameter_relevance(descriptors, recent_10)
+        recent_fraction_relevance = parameter_relevance(descriptors, recent_fraction)
+        top_relevance = parameter_relevance(descriptors, top_quartile)
+
+        def relevance_mean(values: dict[str, float]) -> float:
+            return float(np.mean(list(values.values()))) if values else 1.0
+
+        common = sorted(set(global_relevance) & set(recent_10_relevance))
+        stability = (
+            1.0
+            - float(
+                np.mean(
+                    [
+                        abs(global_relevance[name] - recent_10_relevance[name])
+                        for name in common
+                    ]
+                )
+            )
+            if common
+            else 1.0
+        )
+        losses = np.asarray([float(row["loss"]) for row in successes], dtype=float)
+        activities = np.asarray(
+            [
+                np.mean([_is_active(row, descriptor) for row in successes])
+                if successes
+                else 0.0
+                for descriptor in descriptors
+            ],
+            dtype=float,
+        )
+        additions = {
+            "recent_10_relevance_mean": relevance_mean(recent_10_relevance),
+            "recent_25pct_relevance_mean": relevance_mean(recent_fraction_relevance),
+            "top_quartile_relevance_mean": relevance_mean(top_relevance),
+            "global_recent_relevance_stability": float(np.clip(stability, 0.0, 1.0)),
+            "recent_10_improvement_density": self._improvement_density(losses, 10),
+            "recent_25pct_improvement_density": self._improvement_density(
+                losses, recent_fraction_count
+            ),
+            "incumbent_age_fraction": self._incumbent_age(losses),
+            "active_support_min": float(np.min(activities)) if activities.size else 0.0,
+            "active_support_q25": (
+                float(np.quantile(activities, 0.25)) if activities.size else 0.0
+            ),
+        }
+        return {
+            name: self._finite({**base, **additions}[name])
+            for name in self.FEATURE_NAMES
+        }
+
+    @staticmethod
+    def _improvement_density(losses: np.ndarray, window: int) -> float:
+        if losses.size < 2 or window < 2:
+            return 0.0
+        start = max(0, len(losses) - int(window))
+        incumbents = np.minimum.accumulate(losses)
+        changes = np.diff(incumbents)
+        relevant = changes[max(0, start - 1) :]
+        return float(np.mean(relevant < 0)) if relevant.size else 0.0
+
+    @staticmethod
+    def _incumbent_age(losses: np.ndarray) -> float:
+        if losses.size < 2:
+            return 0.0
+        best = float(np.min(losses))
+        latest_best = int(np.flatnonzero(losses == best)[-1])
+        return float((len(losses) - 1 - latest_best) / (len(losses) - 1))
+
+
+FEATURE_EXTRACTORS = {
+    ATPE2FeatureExtractor.version: ATPE2FeatureExtractor,
+    ATPE2ContextV4FeatureExtractor.version: ATPE2ContextV4FeatureExtractor,
+}

@@ -8,7 +8,7 @@ Gate 3 remain the independent checks after a controller is frozen.
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
+from collections import Counter, defaultdict
 import hashlib
 import json
 import multiprocessing as mp
@@ -31,7 +31,7 @@ from .validate import (
 )
 
 
-ITERATION_SCHEMA_VERSION = "atpe2-iteration-screen-v2"
+ITERATION_SCHEMA_VERSION = "atpe2-iteration-screen-v3"
 ITERATION_OPTIMIZERS = ("random", "hyperopt_tpe", "legacy_atpe", "atpe2")
 ITERATION_TRAJECTORIES = ("random", "tpe", "space_filled_atpe2")
 ITERATION_CHECKPOINTS = (10, 25, 50)
@@ -90,7 +90,9 @@ def _task_rows(
         for checkpoint in ITERATION_CHECKPOINTS:
             history = build_initial_history(task, history_seed, checkpoint, method)
             loss_scale = _history_loss_scale(history)
-            lineage = content_hash([task.task_id, "iteration", method, history_seed])
+            lineage = content_hash(
+                [task.specification(), ITERATION_SCHEMA_VERSION, method, history_seed]
+            )
             for rollout_index in range(ITERATION_ROLLOUT_SEEDS):
                 rollout_seed = (
                     seed
@@ -236,6 +238,22 @@ def summarize_iteration(
         and decision.get("fallback_reason") is None
         for decision in decisions
     )
+    effective_decisions = [
+        decision
+        for decision in decisions
+        if "successful_history_count" in decision
+        and "filtered_history_count" in decision
+    ]
+    locked_parameter_counts = Counter(
+        name
+        for decision in decisions
+        for name in decision.get("locked_parameters", [])
+    )
+    retained_history_ratios = [
+        decision["filtered_history_count"] / decision["successful_history_count"]
+        for decision in effective_decisions
+        if decision["successful_history_count"] > 0
+    ]
     worst_paired_regret = max(
         (
             values["mean_delta"]
@@ -286,6 +304,20 @@ def summarize_iteration(
                         for decision in decisions
                     ]
                 )
+            ),
+            "decisions_with_effective_locks": sum(
+                bool(decision.get("locked_parameters")) for decision in decisions
+            ),
+            "locked_parameter_counts": dict(sorted(locked_parameter_counts.items())),
+            "history_filtering_decisions": sum(
+                decision["filtered_history_count"]
+                < decision["successful_history_count"]
+                for decision in effective_decisions
+            ),
+            "median_retained_history_fraction": (
+                float(np.median(retained_history_ratios))
+                if retained_history_ratios
+                else None
             ),
         },
     }

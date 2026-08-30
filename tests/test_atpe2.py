@@ -6,6 +6,7 @@ import pytest
 
 from hypermax.algorithms.atpe2.controller import ATPE2Action, ATPE2Controller
 from hypermax.algorithms.atpe2.features import (
+    ATPE2ContextV4FeatureExtractor,
     ATPE2FeatureExtractor,
     describe_space,
     parameter_relevance,
@@ -89,6 +90,23 @@ def test_features_are_translation_and_positive_scale_invariant():
     )
     assert np.allclose(list(base.values()), list(tiny.values()), rtol=1e-10, atol=1e-10)
     assert np.allclose(list(base.values()), list(huge.values()), rtol=1e-10, atol=1e-10)
+
+
+def test_context_v4_appends_scale_free_local_summaries():
+    losses = [8.0, 7.0, 7.5, 6.0, 5.0, 5.5, 4.0, 3.0, 3.5, 2.0, 1.0, 1.5]
+    rows = [result(index, loss) for index, loss in enumerate(losses)]
+    extractor = ATPE2ContextV4FeatureExtractor()
+    original = extractor.extract(MIXED_SPACE, rows)
+    transformed = extractor.extract(
+        MIXED_SPACE,
+        [result(index, -17.0 + 1e6 * loss) for index, loss in enumerate(losses)],
+    )
+
+    assert extractor.version == "atpe2-context-v4"
+    assert tuple(original) == extractor.FEATURE_NAMES
+    assert np.all(np.isfinite(list(original.values())))
+    for name in extractor.V4_FEATURE_NAMES:
+        assert original[name] == pytest.approx(transformed[name])
 
 
 def test_parameter_relevance_is_conservative_for_small_or_constant_activity():
@@ -218,6 +236,75 @@ def test_manifest_controls_runtime_candidate_count_without_changing_the_anchor()
     assert actions[-1] == ATPE2Action.anchor()
 
 
+def test_factorized_runtime_learns_inactive_groups_and_never_falls_back():
+    class FactorizedStub:
+        is_factorized = True
+        research_ready = True
+        action_names = ATPE2Action.NAMES
+        feature_extractor_class = ATPE2FeatureExtractor
+        manifest = {
+            "runtime": {
+                "group_proposals": 17,
+                "retained_per_group": 6,
+                "beam_width": 64,
+                "max_supported_distance": 1.0,
+            },
+            "score_composition": {
+                "group_weights": {"search": 1.0, "history": 1.0, "locking": 1.0},
+                "residual_weight": 0.5,
+                "downside_weight": 0.5,
+                "support_weight": 0.25,
+            },
+            "feature_schema_version": ATPE2FeatureExtractor.version,
+            "model_version": "factorized-test",
+        }
+
+        def predict_group(self, group, matrix):
+            widths = {"search": 2, "history": 3, "locking": 3}
+            anchor = {
+                "search": ATPE2Action.anchor().vector_for(("gamma", "n_ei_candidates")),
+                "history": ATPE2Action.anchor().vector_for(
+                    ("history_keep_fraction", "history_recency_bias", "history_quality_bias")
+                ),
+                "locking": ATPE2Action.anchor().vector_for(
+                    ("secondary_fraction", "secondary_lock_probability", "secondary_top_fraction")
+                ),
+            }[group]
+            values = matrix[:, -widths[group] :]
+            score = -np.sum((values - anchor) ** 2, axis=1)
+            return score, np.full(len(matrix), 0.05)
+
+        def predict_residual(self, matrix):
+            return np.zeros(len(matrix)), np.full(len(matrix), 0.02)
+
+        def predict_downside(self, matrix):
+            return {
+                "harm": np.zeros(len(matrix)),
+                "variability": np.zeros(len(matrix)),
+                "failure": np.zeros(len(matrix)),
+                "catastrophic": np.zeros(len(matrix)),
+            }
+
+        def support_cost(self, matrix):
+            return np.zeros(len(matrix))
+
+        def in_envelope(self, context):
+            return True
+
+    controller = ATPE2Controller(33, ensemble=FactorizedStub())
+    selected = controller.action_for(MIXED_SPACE, [], [])
+
+    assert selected == ATPE2Action.anchor()
+    assert controller.last_record["decision_mode"] == "adaptive_model"
+    assert controller.last_record["fallback_reason"] is None
+    assert controller.last_record["candidate_count"] <= 65
+    assert all(
+        decision["inactive"]
+        for decision in controller.last_record["group_decisions"].values()
+    )
+    assert math.isfinite(controller.last_record["support_cost"])
+
+
 def test_non_power_of_two_runtime_candidate_count_is_schema_incompatible():
     ensemble = ATPE2ModelEnsemble.load_default()
     manifest = json.loads(json.dumps(ensemble.manifest))
@@ -247,6 +334,17 @@ def test_atpe2_ignores_failed_missing_and_nonfinite_history():
     sample = ATPE2Optimizer(seed=2).recommendNextParameters(MIXED_SPACE, rows, [])
     assert -3 <= sample["x"] <= 3
     assert math.isfinite(sample["normal"])
+
+
+def test_atpe2_records_effective_history_and_locking_telemetry():
+    rows = [result(index, float(index)) for index in range(20)]
+    optimizer = ATPE2Optimizer(seed=2)
+    optimizer.recommendNextParameters(MIXED_SPACE, rows, [])
+
+    record = optimizer.controller.last_record
+    assert record["successful_history_count"] == 20
+    assert 1 <= record["filtered_history_count"] <= 20
+    assert record["locked_parameters"] == sorted(record["locked_parameters"])
 
 
 def test_frozen_manifest_and_models_load_from_package_resources():

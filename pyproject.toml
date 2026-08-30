@@ -67,3 +67,6 @@ hypermax = ["atpe_models/*.txt", "atpe_models/*.json", "atpe2_models/*.txt", "at
 testpaths = ["tests"]
 addopts = "-ra"
 pythonpath = ["."]
+markers = [
+  "slow: integration tests intended for the auxiliary Linux hosts",
+]

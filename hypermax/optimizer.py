@@ -94,7 +94,7 @@ class Optimizer:
                     "OpenMP runtime with `brew install libomp`, then retry."
                 ) from exc
 
-            self.atpeOptimizer = ATPEOptimizer()
+            self.atpeOptimizer = ATPEOptimizer(seed=seed)
             if method == "abh":
                 from hypermax.algorithms.adaptive_bayesian_hyperband_optimizer import AdaptiveBayesianHyperband
 
@@ -103,6 +103,7 @@ class Optimizer:
                     self.searchConfig.get("min_budget", 1),
                     self.searchConfig.get("max_budget", 100),
                     self.searchConfig.get("eta", 3),
+                    seed=seed,
                 )
         elif method in {"atpe2", "abh2"}:
             from hypermax.algorithms.atpe2_optimizer import ATPE2Optimizer

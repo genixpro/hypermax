@@ -12,43 +12,92 @@ import lightgbm
 import numpy as np
 
 from .controller_schema import action_schema_definition
-from .features import ATPE2FeatureExtractor
+from .features import (
+    ATPE2ContextV4FeatureExtractor,
+    ATPE2FeatureExtractor,
+    FEATURE_EXTRACTORS,
+)
 from .legacy_features import LegacyATPEFeatureExtractor
 
 
 class ATPE2ModelEnsemble:
     """Eight task-bootstrap regressors plus validation calibration metadata."""
 
-    def __init__(self, manifest: dict[str, Any], models: list[Any]):
+    def __init__(
+        self,
+        manifest: dict[str, Any],
+        models: list[Any],
+        support: dict[str, Any] | None = None,
+    ):
         self.manifest = manifest
         self.models = models
+        self.support = support
+
+    @staticmethod
+    def _checked_payload(directory: Any, artifact: dict[str, Any]) -> bytes:
+        payload = directory.joinpath(artifact["file"]).read_bytes()
+        digest = hashlib.sha256(payload).hexdigest()
+        if digest != artifact["sha256"]:
+            raise ValueError(f"ATPE2 model checksum mismatch for {artifact['file']}")
+        return payload
+
+    @classmethod
+    def _load_components(cls, directory: Any, manifest: dict[str, Any]) -> tuple[list[Any], dict[str, Any] | None]:
+        if manifest.get("policy_type") != "factorized":
+            models = [
+                lightgbm.Booster(
+                    model_str=cls._checked_payload(directory, artifact).decode("utf-8")
+                )
+                for artifact in manifest.get("models", [])
+            ]
+            return models, None
+
+        members = []
+        for member in manifest.get("members", []):
+            groups = {
+                name: lightgbm.Booster(
+                    model_str=cls._checked_payload(directory, artifact).decode("utf-8")
+                )
+                for name, artifact in member.get("groups", {}).items()
+            }
+            residual_artifact = member.get("residual")
+            residual = (
+                lightgbm.Booster(
+                    model_str=cls._checked_payload(directory, residual_artifact).decode("utf-8")
+                )
+                if residual_artifact
+                else None
+            )
+            downside = {
+                name: lightgbm.Booster(
+                    model_str=cls._checked_payload(directory, artifact).decode("utf-8")
+                )
+                for name, artifact in member.get("downside", {}).items()
+            }
+            members.append({"groups": groups, "residual": residual, "downside": downside})
+        support_artifact = manifest.get("support_artifact")
+        support = None
+        if support_artifact:
+            support = json.loads(cls._checked_payload(directory, support_artifact).decode("utf-8"))
+        return members, support
 
     @classmethod
     def load_default(cls) -> "ATPE2ModelEnsemble":
         directory = files("hypermax").joinpath("atpe2_models")
         manifest = json.loads(directory.joinpath("manifest.json").read_text(encoding="utf-8"))
-        models = []
-        for artifact in manifest.get("models", []):
-            payload = directory.joinpath(artifact["file"]).read_bytes()
-            digest = hashlib.sha256(payload).hexdigest()
-            if digest != artifact["sha256"]:
-                raise ValueError(f"ATPE2 model checksum mismatch for {artifact['file']}")
-            # Booster accepts a model string and avoids temporary files for packaged resources.
-            models.append(lightgbm.Booster(model_str=payload.decode("utf-8")))
-        return cls(manifest, models)
+        models, support = cls._load_components(directory, manifest)
+        return cls(manifest, models, support)
 
     @classmethod
     def load(cls, manifest_path: str | Path) -> "ATPE2ModelEnsemble":
         manifest_path = Path(manifest_path)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        models = []
-        for artifact in manifest.get("models", []):
-            path = manifest_path.parent / artifact["file"]
-            payload = path.read_bytes()
-            if hashlib.sha256(payload).hexdigest() != artifact["sha256"]:
-                raise ValueError(f"ATPE2 model checksum mismatch for {path.name}")
-            models.append(lightgbm.Booster(model_file=str(path)))
-        return cls(manifest, models)
+        models, support = cls._load_components(manifest_path.parent, manifest)
+        return cls(manifest, models, support)
+
+    @property
+    def is_factorized(self) -> bool:
+        return self.manifest.get("policy_type") == "factorized"
 
     @property
     def ready(self) -> bool:
@@ -88,6 +137,13 @@ class ATPE2ModelEnsemble:
         return count
 
     @property
+    def feature_extractor_class(self):
+        version = self.manifest.get("feature_schema_version")
+        if version == LegacyATPEFeatureExtractor.version:
+            return LegacyATPEFeatureExtractor
+        return FEATURE_EXTRACTORS.get(version)
+
+    @property
     def schema_compatible(self) -> bool:
         valid_actions = {
             "gamma",
@@ -101,6 +157,7 @@ class ATPE2ModelEnsemble:
         }
         feature_schemas = {
             ATPE2FeatureExtractor.version: ATPE2FeatureExtractor.schema_definition(),
+            ATPE2ContextV4FeatureExtractor.version: ATPE2ContextV4FeatureExtractor.schema_definition(),
             LegacyATPEFeatureExtractor.version: LegacyATPEFeatureExtractor.schema_definition(),
         }
         feature_schema = feature_schemas.get(self.manifest.get("feature_schema_version"))
@@ -124,15 +181,31 @@ class ATPE2ModelEnsemble:
         expected_action_hash = hashlib.sha256(
             json.dumps(action_schema, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        try:
-            self.runtime_candidate_count
-        except (TypeError, ValueError):
-            return False
+        if not self.is_factorized:
+            try:
+                self.runtime_candidate_count
+            except (TypeError, ValueError):
+                return False
+        factorized_components_valid = True
+        if self.is_factorized:
+            expected_groups = {"search", "history", "locking"}
+            factorized_components_valid = (
+                self.manifest.get("schema_version") == "atpe2-factorized-manifest-v1"
+                and len(self.models) == 8
+                and all(
+                    set(member.get("groups", {})) == expected_groups
+                    for member in self.models
+                )
+                and self.support is not None
+                and int(self.manifest.get("runtime", {}).get("group_proposals", 0)) == 17
+                and int(self.manifest.get("runtime", {}).get("beam_width", 0)) <= 64
+            )
         return (
             self.manifest.get("action_schema_version") == "atpe2-action-v1"
             and complete_action_partition
             and self.manifest.get("feature_schema_hash") == expected_feature_hash
             and self.manifest.get("action_schema_hash") == expected_action_hash
+            and factorized_components_valid
         )
 
     def in_envelope(self, context: np.ndarray) -> bool:
@@ -157,6 +230,82 @@ class ATPE2ModelEnsemble:
         if not np.all(np.isfinite(means)) or not np.all(np.isfinite(uncertainty)):
             raise FloatingPointError("ATPE2 ensemble emitted a non-finite prediction")
         return means, uncertainty
+
+    @staticmethod
+    def _component_prediction(models: list[Any], matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        if not models:
+            zeros = np.zeros(len(matrix), dtype=float)
+            return zeros, zeros
+        predictions = np.asarray(
+            [model.predict(matrix, num_threads=1) for model in models], dtype=float
+        )
+        means = np.mean(predictions, axis=0)
+        uncertainty = (
+            np.std(predictions, axis=0, ddof=1)
+            if len(predictions) > 1
+            else np.zeros(predictions.shape[1], dtype=float)
+        )
+        if not np.all(np.isfinite(means)) or not np.all(np.isfinite(uncertainty)):
+            raise FloatingPointError("ATPE2 factorized component emitted non-finite predictions")
+        return means, uncertainty
+
+    def predict_group(self, group: str, matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        if not self.is_factorized or not self.research_ready:
+            raise RuntimeError("factorized group scoring requires a fitted factorized manifest")
+        means, uncertainty = self._component_prediction(
+            [member["groups"][group] for member in self.models], matrix
+        )
+        if len(means) <= 1:
+            percentiles = np.full(len(means), 0.5, dtype=float)
+        else:
+            order = np.argsort(np.argsort(means, kind="stable"), kind="stable")
+            percentiles = order.astype(float) / float(len(means) - 1)
+        calibration = self.manifest.get("calibration", {}).get("groups", {}).get(group, {})
+        x = np.asarray(calibration.get("percentile", [0.0, 1.0]), dtype=float)
+        y = np.asarray(calibration.get("advantage", [-0.5, 0.5]), dtype=float)
+        calibrated = np.interp(percentiles, x, y)
+        return calibrated, uncertainty
+
+    def predict_residual(self, matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return self._component_prediction(
+            [member.get("residual") for member in self.models if member.get("residual") is not None],
+            matrix,
+        )
+
+    def predict_downside(self, matrix: np.ndarray) -> dict[str, np.ndarray]:
+        output: dict[str, np.ndarray] = {}
+        for target in ("harm", "variability", "failure", "catastrophic"):
+            models = [
+                member.get("downside", {}).get(target)
+                for member in self.models
+                if member.get("downside", {}).get(target) is not None
+            ]
+            output[target] = self._component_prediction(models, matrix)[0]
+        return output
+
+    def support_cost(self, matrix: np.ndarray) -> np.ndarray:
+        """Calibrated k-NN distance to deterministic training representatives."""
+        if self.support is None:
+            return np.zeros(len(matrix), dtype=float)
+        center = np.asarray(self.support["center"], dtype=float)
+        scale = np.asarray(self.support["scale"], dtype=float)
+        representatives = np.asarray(self.support["representatives"], dtype=float)
+        if matrix.shape[1] != len(center) or representatives.shape[1] != len(center):
+            raise ValueError("ATPE2 support artifact width does not match model input")
+        normalized = (np.asarray(matrix, dtype=float) - center) / scale
+        distances = np.sqrt(
+            np.mean((normalized[:, None, :] - representatives[None, :, :]) ** 2, axis=2)
+        )
+        k = min(int(self.support.get("k", 5)), distances.shape[1])
+        nearest = np.partition(distances, k - 1, axis=1)[:, :k]
+        raw = np.mean(nearest, axis=1)
+        calibration = self.support.get("calibration", {})
+        x = np.asarray(calibration.get("distance", [0.0, 1.0]), dtype=float)
+        y = np.asarray(calibration.get("cost", [0.0, 1.0]), dtype=float)
+        costs = np.interp(raw, x, y, left=float(y[0]), right=float(y[-1]))
+        if not np.all(np.isfinite(costs)):
+            raise FloatingPointError("ATPE2 support scoring emitted non-finite costs")
+        return costs
 
     @property
     def uncertainty_penalty(self) -> float:

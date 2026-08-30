@@ -9,13 +9,13 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 from functools import lru_cache
+import hashlib
 import importlib.metadata
 import json
 import math
 import multiprocessing as mp
 from pathlib import Path
 import platform
-import random
 import time
 from typing import Any
 
@@ -24,7 +24,10 @@ import numpy as np
 from scipy.stats import qmc
 
 from hypermax.algorithms.atpe2.controller import ATPE2Action, ATPE2Controller
-from hypermax.algorithms.atpe2.features import ATPE2FeatureExtractor
+from hypermax.algorithms.atpe2.features import (
+    ATPE2ContextV4FeatureExtractor,
+    ATPE2FeatureExtractor,
+)
 from hypermax.algorithms.atpe2_optimizer import ATPE2Optimizer
 from hypermax.algorithms.atpe2.model import ATPE2ModelEnsemble
 from hypermax.algorithms.random_search_optimizer import RandomSearchOptimizer
@@ -33,7 +36,18 @@ from hypermax.hyperparameter import Hyperparameter
 
 from .database import ResearchStore, content_hash
 from .labels import label_state
-from .synthetic import GENERATOR_VERSION, SyntheticTask, synthetic_tasks
+from .synthetic import (
+    GENERATOR_VERSION,
+    SyntheticTask,
+    factorized_training_tasks,
+    synthetic_tasks,
+)
+from .acquisition import (
+    ACQUISITION_IMPLEMENTATION_VERSION,
+    AcquisitionCandidate,
+    acquisition_lineage,
+    structured_action_candidates,
+)
 
 
 TRAJECTORY_METHODS = ("random", "tpe", "legacy_atpe", "space_filled_atpe2")
@@ -81,11 +95,9 @@ def _optimizer_for_trajectory(
     if method == "tpe":
         return TPEOptimizer(seed=seed)
     if method == "legacy_atpe":
-        random.seed(seed)
-        np.random.seed(seed % (2**32))
         from hypermax.algorithms.atpe_optimizer import ATPEOptimizer
 
-        return ATPEOptimizer()
+        return ATPEOptimizer(seed=seed)
     if method == "space_filled_atpe2":
         optimizer = ATPE2Optimizer(seed=seed)
         actions = action_candidates(
@@ -183,6 +195,8 @@ def _add_rollout(
     action: ATPE2Action,
     rollout_seed: int,
     repeat_index: int,
+    acquisition_role: str = "legacy_joint",
+    varied_groups: tuple[str, ...] = (),
 ) -> None:
     configuration = asdict(action)
     if store.has_evaluation(state_id, configuration, rollout_seed, repeat_index):
@@ -201,6 +215,8 @@ def _add_rollout(
             "failures": failures,
             "timing": timing,
             "dependency_versions": dependency_versions(),
+            "acquisition_role": acquisition_role,
+            "varied_groups": list(varied_groups),
         }
     )
 
@@ -242,7 +258,11 @@ def generate_state(
     fixed_constants: dict[str, Any] | None = None,
     action_ranges: dict[str, dict[str, Any]] | None = None,
 ) -> str:
-    lineage = content_hash([task.task_id, method, trajectory_seed])
+    if acquisition_round not in {0, 1}:
+        raise ValueError("Factorized collection retains exactly acquisition rounds {0,1}")
+    base_lineage = content_hash(
+        [task.specification(), GENERATOR_VERSION, method, trajectory_seed]
+    )
     history = build_trajectory(
         task,
         method,
@@ -252,79 +272,80 @@ def generate_state(
         fixed_constants,
         action_ranges,
     )
-    extractor = ATPE2FeatureExtractor()
+    extractor = (
+        ATPE2ContextV4FeatureExtractor()
+        if acquisition_round == 1
+        else ATPE2FeatureExtractor()
+    )
     context = {
         "__feature_schema_version": extractor.version,
         **extractor.extract(task.space, history, []),
     }
-    state_id = store.upsert_state(task.task_id, method, lineage, checkpoint, history, context, acquisition_round)
-    actions = action_candidates(
-        trajectory_seed, acquisition_round, fixed_constants, action_ranges
+    acquisition_metadata: dict[str, Any] = {}
+    if acquisition_round == 1:
+        if model_manifest is None:
+            raise ValueError("Structured round one requires a provisional manifest")
+        if fixed_constants:
+            raise ValueError("Factorized structured acquisition requires all eight public knobs")
+        ensemble = ATPE2ModelEnsemble.load(model_manifest)
+        if not ensemble.research_ready:
+            raise ValueError("Structured acquisition requires a fitted provisional policy")
+        provisional_controller = ATPE2Controller(trajectory_seed, ensemble=ensemble)
+        provisional_action = provisional_controller.action_for(task.space, history, [])
+        policy_context = provisional_controller.extractor.vector(task.space, history, [])
+        records = structured_action_candidates(
+            trajectory_seed,
+            provisional_action,
+            ensemble,
+            policy_context,
+            action_ranges,
+        )
+        provisional_sha256 = hashlib.sha256(model_manifest.read_bytes()).hexdigest()
+        acquisition_metadata = acquisition_lineage(records, provisional_sha256)
+        lineage = content_hash([base_lineage, acquisition_metadata])
+    else:
+        lineage = base_lineage
+        actions = action_candidates(
+            trajectory_seed, acquisition_round, fixed_constants, action_ranges
+        )
+        records = [
+            AcquisitionCandidate(
+                action,
+                "neutral_anchor" if action == ATPE2Action.anchor() else "round_zero_joint_sobol",
+                () if action == ATPE2Action.anchor() else ("search", "history", "locking"),
+            )
+            for action in actions
+        ]
+    state_id = store.upsert_state(
+        task.task_id,
+        method,
+        lineage,
+        checkpoint,
+        history,
+        context,
+        acquisition_round,
+        acquisition_metadata,
     )
     if len(fixed_constants or {}) == len(ATPE2Action.NAMES):
         # Empirical pruning is allowed to remove every knob. In that degenerate
         # but valid outcome the controller is exactly the fixed TPE anchor, so
         # repeated Sobol coordinates do not represent distinct actions.
-        actions = [actions[-1]]
-    elif acquisition_round > 0:
-        # Later rounds reserve 70% of the 64 non-anchor slots for new Sobol
-        # coverage and 30% for actions that were promising or uncertain before.
-        summaries = store.task_action_summaries(task.task_id)
-        promising = sorted(summaries, key=lambda row: (-row["mean_utility"], canonical_action(row["configuration"])))[:10]
-        uncertain = sorted(summaries, key=lambda row: (-row["uncertainty"], canonical_action(row["configuration"])))[:9]
-        adaptive_sources = promising + uncertain
-        if not adaptive_sources:
-            raise ValueError("Adaptive acquisition requires round-zero task evidence")
-        selected = []
-        anchor = actions[-1]
-        coverage = actions[:45]
-        seen = {
-            canonical_action(asdict(action)) for action in [*coverage, anchor]
-        }
-        for row in adaptive_sources:
-            candidate = ATPE2Action(
-                **{**row["configuration"], **(fixed_constants or {})}
-            )
-            key = canonical_action(asdict(candidate))
-            if key not in seen:
-                selected.append(candidate)
-                seen.add(key)
-        perturbation_index = 0
-        while len(selected) < 19:
-            source = adaptive_sources[perturbation_index % len(adaptive_sources)][
-                "configuration"
-            ]
-            donor = asdict(actions[45 + perturbation_index % 19])
-            # Small deterministic moves around an empirically promising or
-            # uncertain action keep these slots adaptive while restoring
-            # uniqueness when the two ranked sets overlap.
-            blend = 0.05 + 0.02 * (perturbation_index // len(adaptive_sources))
-            values = {
-                name: (
-                    int(round((1.0 - blend) * float(source[name]) + blend * float(donor[name])))
-                    if name == "n_ei_candidates"
-                    else (1.0 - blend) * float(source[name]) + blend * float(donor[name])
-                )
-                for name in ATPE2Action.NAMES
-            }
-            values.update(fixed_constants or {})
-            candidate = ATPE2Action(**values)
-            key = canonical_action(asdict(candidate))
-            if key not in seen:
-                selected.append(candidate)
-                seen.add(key)
-            perturbation_index += 1
-            if perturbation_index > 10_000:
-                raise RuntimeError("Could not construct 19 unique adaptive acquisitions")
-        actions = coverage + selected[:19] + [anchor]
-        if len({canonical_action(asdict(action)) for action in actions}) != 65:
-            raise ValueError(
-                "Action schema collapsed the required 64 unique configurations plus anchor"
-            )
+        records = [records[-1]]
     paired_seeds = [trajectory_seed * 1000 + 101, trajectory_seed * 1000 + 202]
-    for action in actions:
+    for record in records:
         for repeat_index, rollout_seed in enumerate(paired_seeds):
-            _add_rollout(store, task, state_id, lineage, history, action, rollout_seed, repeat_index)
+            _add_rollout(
+                store,
+                task,
+                state_id,
+                lineage,
+                history,
+                record.action,
+                rollout_seed,
+                repeat_index,
+                record.role,
+                record.varied_groups,
+            )
     # Derive the adaptive third-repeat set only from the two mandatory paired
     # rollouts. Otherwise resuming a completed state could let already-added
     # third repeats change the uncertainty ordering and slowly expand the set.
@@ -334,17 +355,20 @@ def generate_state(
         if int(record["repeat_index"]) < 2
     ]
     third_hashes = _third_repeat_candidates(initial)
-    by_hash = {content_hash(asdict(action)): action for action in actions}
+    by_hash = {content_hash(asdict(record.action)): record for record in records}
     for configuration_hash in third_hashes:
+        record = by_hash[configuration_hash]
         _add_rollout(
             store,
             task,
             state_id,
             lineage,
             history,
-            by_hash[configuration_hash],
+            record.action,
             trajectory_seed * 1000 + 303,
             2,
+            record.role,
+            record.varied_groups,
         )
     _write_labels(store, state_id)
     store.mark_state_complete(state_id)
@@ -390,6 +414,7 @@ def generate(
     action_schema: dict[str, Any] | None = None,
     instances_per_family: int = 4,
     workers: int = 1,
+    task_count: int | None = 192,
 ) -> None:
     if workers < 1:
         raise ValueError("workers must be positive")
@@ -406,7 +431,11 @@ def generate(
         if not tasks or {task.task_id for task in tasks} != training_task_ids:
             raise ValueError("Dataset aggregation could not resolve every training task")
     else:
-        tasks = synthetic_tasks(seed, instances_per_family)
+        tasks = (
+            factorized_training_tasks(seed, task_count)
+            if task_count is not None
+            else synthetic_tasks(seed, instances_per_family)
+        )
     tasks = tasks[:max_tasks]
     with ResearchStore(database) as store:
         schema = (action_schema or {}).get("backward_knockout", action_schema or {})
@@ -421,14 +450,30 @@ def generate(
                 "checkpoints": list(checkpoints),
                 "instances_per_family": instances_per_family,
                 "task_count": len(tasks),
+                "task_family_counts": {
+                    family: sum(task.family == family for task in tasks)
+                    for family in sorted({task.family for task in tasks})
+                },
                 "acquisition_mix": (
                     {"fixed_anchor": 1}
                     if len(fixed_constants) == len(ATPE2Action.NAMES)
                     else (
-                        {"space_filling": 45, "promising_or_uncertain": 19, "anchor": 1}
-                        if acquisition_round > 0
+                        {
+                            "neutral_anchor": 1,
+                            "provisional_policy": 1,
+                            "group_isolated": 32,
+                            "two_group": 18,
+                            "full_action_regime": 8,
+                            "highest_disagreement": 5,
+                        }
+                        if acquisition_round == 1
                         else {"space_filling": 64, "anchor": 1}
                     )
+                ),
+                "acquisition_implementation_version": (
+                    ACQUISITION_IMPLEMENTATION_VERSION
+                    if acquisition_round == 1
+                    else "atpe2-round-zero-joint-sobol-v1"
                 ),
                 "model_manifest_sha256": (
                     content_hash(json.loads(model_manifest.read_text()))
@@ -473,12 +518,18 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("database", type=Path)
     parser.add_argument("--seed", type=int, required=True)
-    parser.add_argument("--checkpoints", type=int, nargs="+", default=[12, 20, 40])
+    parser.add_argument("--checkpoints", type=int, nargs="+", default=[20, 50, 100])
     parser.add_argument("--max-tasks", type=int)
     parser.add_argument("--acquisition-round", type=int, default=0)
     parser.add_argument("--model-manifest", type=Path)
     parser.add_argument("--action-schema", type=Path)
     parser.add_argument("--instances-per-family", type=int, default=4)
+    parser.add_argument(
+        "--task-count",
+        type=int,
+        default=192,
+        help="factorized protocol task count; use 0 for legacy equal-per-family generation",
+    )
     parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args(argv)
     if args.acquisition_round > 0 and args.model_manifest is None:
@@ -494,6 +545,7 @@ def main(argv=None):
         action_schema,
         args.instances_per_family,
         args.workers,
+        None if args.task_count == 0 else args.task_count,
     )
 
 

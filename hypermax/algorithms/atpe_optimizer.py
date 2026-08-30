@@ -11,7 +11,6 @@ from sklearn.preprocessing import StandardScaler
 import lightgbm
 import scipy.stats
 import math
-import warnings
 from pprint import pprint
 import copy
 import hypermax.file_utils
@@ -171,7 +170,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         'top_30%_loss_stddev_median_ratio'
     ]
 
-    def __init__(self):
+    def __init__(self, seed=None):
         modelDirectory = files("hypermax").joinpath("atpe_models")
         scalingModelData = json.loads(modelDirectory.joinpath("scaling_model.json").read_text(encoding="utf-8"))
         self.featureScalingModels = {}
@@ -196,9 +195,18 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         self.lastATPEParameters = None
         self.lastLockedParameters = []
         self.atpeParamDetails = None
+        self.set_seed(seed)
+
+    def set_seed(self, seed=None):
+        """Reset legacy ATPE randomness without disturbing process-global RNGs."""
+        self.seed = seed
+        self._random = random if seed is None else random.Random(seed)
+        self._numpy_random = None if seed is None else numpy.random.default_rng(seed)
 
     def recommendNextParameters(self, hyperparameterSpace, results, currentTrials, lockedValues=None):
-        rstate = numpy.random.default_rng(seed=random.randint(1, 2 ** 32 - 1))
+        rstate = numpy.random.default_rng(
+            seed=self._random.randint(1, 2 ** 32 - 1)
+        )
 
         params = {}
         def sample(parameters):
@@ -217,7 +225,19 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
 
         atpeParams = {}
         atpeParamDetails = {}
-        if len(list(result for result in results if result['loss'])) < initializationRounds:
+        successfulLosses = []
+        for result in results:
+            try:
+                loss = float(result.get('loss'))
+            except (TypeError, ValueError):
+                continue
+            if (
+                math.isfinite(loss)
+                and str(result.get('status', 'ok')).lower()
+                in {'ok', 'success', 'completed'}
+            ):
+                successfulLosses.append(loss)
+        if len(successfulLosses) < initializationRounds:
             atpeParams = {
                 'gamma': 1.0,
                 'nEICandidates': 24,
@@ -303,7 +323,8 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
 
                     # Make a random weighted choice based on the normalized probabilities
                     probabilities = value / numpy.sum(value)
-                    chosen = numpy.random.choice(a=self.atpeParameterValues[atpeParameter], p=probabilities)
+                    chooser = self._numpy_random.choice if self._numpy_random is not None else numpy.random.choice
+                    chosen = chooser(a=self.atpeParameterValues[atpeParameter], p=probabilities)
                     atpeParams[atpeParameter] = str(chosen)
                 else:
                     # Renormalize the predictions
@@ -468,10 +489,10 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
             # Any secondary parameters have may be locked to either the current best value or any value within the result pool.
             for secondary in secondaryParameters:
                 if atpeParams['secondaryProbabilityMode'] == 'fixed':
-                    if random.uniform(0, 1) < atpeParams['secondaryFixedProbability']:
+                    if self._random.uniform(0, 1) < atpeParams['secondaryFixedProbability']:
                         self.lastLockedParameters.append(secondary.name)
                         if atpeParams['secondaryLockingMode'] == 'top':
-                            lockResult = random.choice(topResults)
+                            lockResult = self._random.choice(topResults)
                             if lockResult.get(secondary.name) is not None and lockResult.get(secondary.name) != "":
                                 lockedValues[secondary.name] = lockResult.get(secondary.name)
                         elif atpeParams['secondaryLockingMode'] == 'random':
@@ -479,10 +500,10 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
 
                 elif atpeParams['secondaryProbabilityMode'] == 'correlation':
                     probability = max(0, min(1, abs(correlations[secondary.name]) * atpeParams['secondaryCorrelationMultiplier']))
-                    if random.uniform(0, 1) < probability:
+                    if self._random.uniform(0, 1) < probability:
                         self.lastLockedParameters.append(secondary.name)
                         if atpeParams['secondaryLockingMode'] == 'top':
-                            lockResult = random.choice(topResults)
+                            lockResult = self._random.choice(topResults)
                             if lockResult.get(secondary.name) is not None and lockResult.get(secondary.name) != "":
                                 lockedValues[secondary.name] = lockResult.get(secondary.name)
                         elif atpeParams['secondaryLockingMode'] == 'random':
@@ -493,19 +514,19 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                 if atpeParams['resultFilteringMode'] == 'none':
                     filteredResults.append(result)
                 elif atpeParams['resultFilteringMode'] == 'random':
-                    if random.uniform(0, 1) < atpeParams['resultFilteringRandomProbability']:
+                    if self._random.uniform(0, 1) < atpeParams['resultFilteringRandomProbability']:
                         filteredResults.append(result)
                     else:
                         removedResults.append(result)
                 elif atpeParams['resultFilteringMode'] == 'age':
                     age = float(resultIndex) / float(len(results))
-                    if random.uniform(0, 1) < (atpeParams['resultFilteringAgeMultiplier'] * age):
+                    if self._random.uniform(0, 1) < (atpeParams['resultFilteringAgeMultiplier'] * age):
                         filteredResults.append(result)
                     else:
                         removedResults.append(result)
                 elif atpeParams['resultFilteringMode'] == 'loss_rank':
                     rank = 1.0 - (float(sortedResults.index(result)) / float(len(results)))
-                    if random.uniform(0, 1) < (atpeParams['resultFilteringLossRankMultiplier'] * rank):
+                    if self._random.uniform(0, 1) < (atpeParams['resultFilteringLossRankMultiplier'] * rank):
                         filteredResults.append(result)
                     else:
                         removedResults.append(result)
@@ -536,7 +557,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                 minVal = math.log(minVal)
                 maxVal = math.log(maxVal)
 
-            value = random.uniform(minVal, maxVal)
+            value = self._random.uniform(minVal, maxVal)
 
             if parameter.config.get('scaling', 'linear') == 'logarithmic':
                 value = math.exp(value)
@@ -551,7 +572,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                 meanVal = math.log(meanVal)
                 stddevVal = math.log(stddevVal)
 
-            value = random.gauss(meanVal, stddevVal)
+            value = self._random.gauss(meanVal, stddevVal)
 
             if parameter.config.get('scaling', 'linear') == 'logarithmic':
                 value = math.exp(value)
@@ -560,7 +581,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                 value = round(value / parameter.config['rounding']) * parameter.config['rounding']
         elif parameter.config.get('mode', 'uniform') == 'randint':
             max = parameter.config['max']
-            value = random.randint(0, max-1)
+            value = self._random.randint(0, max-1)
 
         return value
 
@@ -573,11 +594,6 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         percentile50Loss = 0
         percentile75Loss = 0
         statistics = {}
-
-        # NumPy 2 removed the undocumented ``numpy.warnings`` alias.  Keep the
-        # historical warning-filtering behavior while using Python's public
-        # warnings module so the legacy optimizer remains runnable.
-        warnings.filterwarnings('ignore')
 
         if len(set(losses)) > 1:
             bestLoss = numpy.percentile(losses, 0)
@@ -637,11 +653,14 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                             values.append(getValue(result, parameter))
                             valueLosses.append(result['loss'])
 
-                    correlation = abs(scipy.stats.spearmanr(values, valueLosses)[0])
-                    if math.isnan(correlation) or math.isinf(correlation):
+                    if len(set(valueLosses)) < 2:
                         correlations.append(0)
                     else:
-                        correlations.append(correlation)
+                        correlation = abs(scipy.stats.spearmanr(values, valueLosses)[0])
+                        if math.isnan(correlation) or math.isinf(correlation):
+                            correlations.append(0)
+                        else:
+                            correlations.append(correlation)
 
         correlations = numpy.array(correlations)
 

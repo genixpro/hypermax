@@ -7,6 +7,61 @@ All commands require an explicit seed. The SQLite store uses WAL mode and unique
 state/evaluation identities, so interrupted collection can be resumed without
 duplicating rollouts.
 
+## Factorized-controller cycle
+
+The factorized cycle is intentionally separate from the frozen joint-policy
+publication flow documented below. It preserves the public eight-knob action,
+uses `atpe2-context-v4`, and never falls back to vanilla TPE at runtime.
+
+Create a new database from a pristine round-zero snapshot. This command refuses
+any source containing a previous round-one acquisition:
+
+```bash
+python -m research.atpe2.derive_database pristine-round-0.sqlite factorized.sqlite
+```
+
+Collect structured round one with 192 source tasks (77 hierarchical and 23 from
+each remaining family), checkpoints 20/50/100, and the provisional manifest.
+Every state contains exactly 65 unique actions: anchor, provisional policy, 32
+group-isolated actions, 18 two-group interactions, 8 full regimes, and 5
+highest-disagreement actions. The database records every role and varied group,
+plus the ordered mapping, provisional-manifest hash, and acquisition version in
+state lineage.
+
+```bash
+python -m research.atpe2.generate factorized.sqlite --seed 3 \
+  --checkpoints 20 50 100 --task-count 192 --acquisition-round 1 \
+  --model-manifest provisional/manifest.json --workers 4
+```
+
+Fit one of the bounded factorized branches. Authoritative fits require a clean
+committed source snapshot. Tree and leaf choices are restricted to the declared
+grid; group/residual/downside/support weights are selected from the held-out
+score grid and written into the manifest.
+
+```bash
+python -m research.atpe2.train_factorized factorized.sqlite candidate \
+  --seed 5 --branch context_v4 --trees 12 --leaf-index 0 \
+  --require-clean-source
+```
+
+`manifest.json` contains eight task-bootstrap members, each with three group
+rankers, an optional residual model, and downside heads. It also checksums the
+512-representative support artifact and records component-gate diagnostics.
+Candidates that do not pass those gates must not enter behavioral screens.
+
+The quick ladder uses seeds 7, 19, 23, 31, and 47. Aggregate the five candidate
+and incumbent reports only after every individual report is present:
+
+```bash
+python -m research.atpe2.factorized_screen five-quick.json \
+  --candidate candidate-7.json candidate-19.json candidate-23.json candidate-31.json candidate-47.json \
+  --incumbent incumbent-7.json incumbent-19.json incumbent-23.json incumbent-31.json incumbent-47.json
+```
+
+This cycle stops after the existing pre-Gate-2 standard assessment. Do not run
+Gate 2, freeze, publish, or Gate 3 without a new decision.
+
 The required order is pilot, full-schema pruning evidence, pruned main
 collection, one deployed-controller aggregation round, final training, held-out
 validation, guarded runtime publication, and only then external testing.
@@ -23,6 +78,25 @@ replace Gate 2 or Gate 3:
 
 ```bash
 python -m research.atpe2.iterate hypermax/atpe2_models/manifest.json research/atpe2/iteration.json --seed 7 --workers 6
+```
+
+Compare two reports from identical tasks, histories, and seeds with the paired
+absolute improvement-AUC comparator. Unlike within-report rank utility and
+normalized regret, this remains meaningful when the competing ATPE2 policy
+changes:
+
+```bash
+python -m research.atpe2.compare baseline.json candidate.json comparison.json --seed 7
+```
+
+An experimental eight-knob candidate can be fit without changing the frozen
+runtime policy by omitting `--action-schema`. Keep these artifacts under the
+ignored research artifact directory until the full collection, aggregation,
+and validation sequence passes:
+
+```bash
+python -m research.atpe2.train research/atpe2/pilot.sqlite research/atpe2/.artifacts/full-eight-knob --seed 1 --n-estimators 16 --runtime-candidate-count 64
+python -m research.atpe2.iterate research/atpe2/.artifacts/full-eight-knob/manifest.json research/atpe2/.artifacts/full-eight-knob-screen.json --seed 7 --workers 6
 ```
 
 Gate 1 can be exercised with a short smoke run before the required three-hour

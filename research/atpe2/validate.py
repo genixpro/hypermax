@@ -9,7 +9,6 @@ import hashlib
 import json
 import multiprocessing as mp
 from pathlib import Path
-import random
 import time
 from typing import Any
 
@@ -195,12 +194,12 @@ def _make_optimizer(
         return _fixed_tpe(seed)
     if name == "legacy_atpe":
         global _LEGACY_OPTIMIZER
-        random.seed(seed)
-        np.random.seed(seed % (2**32))
         if _LEGACY_OPTIMIZER is None:
             from hypermax.algorithms.atpe_optimizer import ATPEOptimizer
 
-            _LEGACY_OPTIMIZER = ATPEOptimizer()
+            _LEGACY_OPTIMIZER = ATPEOptimizer(seed=seed)
+        else:
+            _LEGACY_OPTIMIZER.set_seed(seed)
         return _LEGACY_OPTIMIZER
     return ATPE2Optimizer(seed=seed, ensemble=ensembles[name])
 
@@ -270,7 +269,9 @@ def _validate_task(
         history_seed = seed + task_index * 1_000_000 + method_index * 10_000
         for checkpoint in checkpoints:
             history = build_initial_history(task, history_seed, checkpoint, method)
-            lineage = content_hash([task.task_id, "validation", method, history_seed])
+            lineage = content_hash(
+                [task.specification(), "validation-v2", method, history_seed]
+            )
             for rollout_index in range(rollout_seeds):
                 rollout_seed = (
                     seed

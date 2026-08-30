@@ -56,7 +56,9 @@ def _generation_loop(
             store.upsert_task(task.task_id, task.family, task.specification(), GENERATOR_VERSION)
             method = TRAJECTORY_METHODS[state_index % len(TRAJECTORY_METHODS)]
             trajectory_seed = task_seed + 17
-            lineage = content_hash([task.task_id, method, trajectory_seed])
+            lineage = content_hash(
+                [task.specification(), GENERATOR_VERSION, method, trajectory_seed]
+            )
             state_id = content_hash(
                 [task.task_id, lineage, (12, 20, 40)[state_index % 3], 0]
             )
