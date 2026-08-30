@@ -11,7 +11,7 @@ class RandomSearchOptimizer(OptimizationAlgorithmBase):
         if lockedValues is None:
             lockedValues = {}
 
-        rstate = numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))
+        rstate = numpy.random.default_rng(seed=random.randint(1, 2 ** 32 - 1))
 
         trials = self.convertResultsToTrials(hyperparameterSpace, results)
 
@@ -31,4 +31,3 @@ class RandomSearchOptimizer(OptimizationAlgorithmBase):
                       rstate=rstate,
                       show_progressbar=False)
         return params
-

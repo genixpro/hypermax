@@ -1,28 +1,23 @@
 import argparse
-import hypermax.cui
 import json
-import time
 import os.path
-import hyperopt
-from pprint import pprint
 from hypermax.optimizer import Optimizer
-import csv
 
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description='Provide configuration options for Hypermax')
     parser.add_argument('configuration_file', metavar='configuration_file', type=str, nargs=1, help='The JSON based configuration file which is used to configure the hyper-parameter search.')
     parser.add_argument('results_directory', metavar='results_directory', type=str, nargs='?', help='The directory of your existing results to reload and restart from.')
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     return args
 
 
-def main():
-    args = parse_args()
+def main(argv=None):
+    args = parse_args(argv)
     conf = args.configuration_file[0]
     dir_res = args.results_directory
     
-    execute(conf, dir_res)
+    return execute(conf, dir_res)
     
 def execute(conf, dir_res=None):
     with open(conf) as file:
@@ -63,5 +58,14 @@ def execute(conf, dir_res=None):
     optimizer.runOptimizationThread()
 
     if config_data.get("ui", {}).get("enabled", True):
-        hypermax.cui.launchHypermaxUI(optimizer)
+        from hypermax.cui import launchHypermaxUI
 
+        launchHypermaxUI(optimizer)
+    else:
+        optimizer.thread.join()
+
+    return optimizer
+
+
+if __name__ == "__main__":
+    main()

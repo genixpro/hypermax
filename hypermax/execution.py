@@ -8,6 +8,7 @@ import random
 import time
 import datetime
 import os
+import errno
 
 
 class Execution:
@@ -113,10 +114,13 @@ class Execution:
             :return: A string representing the Python script
         """
         self.generateScriptToken()
-        script = "from " + self.config['module'] + " import " + self.config['name'] + "\n"
+        parametersJson = json.dumps(self.parameters)
+        script = "import importlib\n"
         script += "import json\n"
-        script += "result = " + self.config['name'] + "(" + json.dumps(self.parameters) + ")\n"
-        script += "print(\"" + self.scriptToken + "\")\n"
+        script += "function = getattr(importlib.import_module(" + repr(self.config['module']) + "), " + repr(self.config['name']) + ")\n"
+        script += "parameters = json.loads(" + repr(parametersJson) + ")\n"
+        script += "result = function(parameters)\n"
+        script += "print(" + repr(self.scriptToken) + ")\n"
         script += "print(json.dumps(result))\n"
         return script
 
@@ -127,7 +131,7 @@ class Execution:
             :return: The subprocess.Popen object representing the subprocess. Also stored in self.process
         """
         if self.config['type'] == 'python_function':
-            process = subprocess.Popen(['python3', '-c', self.createPythonFunctionScript()], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            process = subprocess.Popen([sys.executable, '-c', self.createPythonFunctionScript()], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             atexit.register(lambda: process.kill())
 
             # Set process affinities - hypermax in one, the model in the rest. Prevents them from causing cache conflicts.
@@ -152,7 +156,7 @@ class Execution:
                 try:
                     subprocess.run(['rsync', '-rac', fromDirectory, host + ":" + self.config['rsync']['to']])
                 except OSError as e:
-                    if e.errno == os.errno.ENOENT: # Rsync doesn't exist, use the slower scp command.
+                    if e.errno == errno.ENOENT: # Rsync doesn't exist, use the slower scp command.
                         subprocess.run(['scp', '-r', fromDirectory, host + ":" + self.config['rsync']['to']])
                     else:
                         raise
@@ -202,41 +206,59 @@ class Execution:
         """
         # print("Running: ", parameters)
         if 'func' in self.config:
-            return self.config['func'](self.parameters)
+            rawResult = self.config['func'](self.parameters)
+            self.result = self.interpretResultObject(rawResult)
+            self.result.setdefault('status', 'ok')
+            self.result.setdefault('log', '')
+            self.result.setdefault('error', None)
+            return self.result
 
         if self.config['type'] == 'python_function' or self.config['type'] == 'remote':
             process = self.startSubprocess()
             output = ''
-            while process.returncode is None and (not self.scriptToken or self.scriptToken not in output) and 'no process found' not in output:
-                process.poll()
-                nextChars = str(process.stdout.read(), 'utf8')
-                for nextChar in nextChars:
-                    if nextChar == chr(127):
-                        output = output[:-1] # Erase the last character from the output.
-                    else:
-                        output += nextChar
-                # print(output)
+            while True:
                 try:
+                    capturedOutput, _ = process.communicate(timeout=0.05)
+                    output = capturedOutput.decode('utf-8', errors='replace')
+                    break
+                except subprocess.TimeoutExpired as exc:
+                    output = (exc.output or b'').decode('utf-8', errors='replace')
+
+                    # Remote workers may remain alive after returning a result.
+                    # Once a complete payload follows the token, close the SSH
+                    # process and keep the output already captured by Popen.
+                    if self.scriptToken and self.scriptToken in output and output.partition(self.scriptToken)[2].strip():
+                        process.terminate()
+                        capturedOutput, _ = process.communicate()
+                        output = capturedOutput.decode('utf-8', errors='replace')
+                        break
+
                     if self.shouldKillProcess():
                         self.killed = True
-                        parent = psutil.Process(process.pid)
-                        children = parent.children(recursive=True)
-                        children.append(parent)
-                        for p in children:
-                            p.send_signal(9)
+                        try:
+                            parent = psutil.Process(process.pid)
+                            children = parent.children(recursive=True)
+                            children.append(parent)
+                            for child in children:
+                                child.kill()
+                        except (psutil.Error, PermissionError):
+                            # Sandboxed environments may deny process-table
+                            # enumeration even though the child itself can be
+                            # terminated safely.
+                            process.kill()
+                        capturedOutput, _ = process.communicate()
+                        output = capturedOutput.decode('utf-8', errors='replace')
+                        break
                 except psutil.NoSuchProcess:
-                    pass
-                time.sleep(0.002)
+                    capturedOutput, _ = process.communicate()
+                    output = capturedOutput.decode('utf-8', errors='replace')
+                    break
 
             if self.killed:
-                output += str(process.stdout.read(), 'utf8')
                 self.result = {"status": "fail", "loss": self.config['auto_kill_loss'], "log": output, "error": "Model was automatically killed.",
                                "time": (datetime.datetime.now() - self.startTime).total_seconds()}
                 self.process = None
                 return self.result
-
-            output += str(process.stdout.read(), 'utf8')
-            # print(output)
 
             if self.config['type'] == 'python_function':
                 cutoffIndex = output.find(self.scriptToken)
@@ -255,8 +277,7 @@ class Execution:
                 self.process = None
                 return self.result
             else:
-                resultString = output[cutoffIndex + len(self.scriptToken):]
-                resultString = resultString.replace("'", "\"")
+                resultString = output[cutoffIndex + len(self.scriptToken):].strip()
                 try:
                     rawResult = json.loads(resultString)
                     self.result = self.interpretResultObject(rawResult)

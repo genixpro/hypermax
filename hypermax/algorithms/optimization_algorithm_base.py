@@ -46,7 +46,7 @@ class OptimizationAlgorithmBase:
 
             for param in Hyperparameter(hyperparameterSpace).getFlatParameters():
                 value = result[param.name]
-                if value is not "" and value is not None:
+                if value != "" and value is not None:
                     if 'enum' in param.config:
                         value = param.config['enum'].index(value)
 

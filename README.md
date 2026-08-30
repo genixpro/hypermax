@@ -17,13 +17,23 @@ Start optimizing today!
 
 # Installation
 
-Install using pip:
+Hypermax supports Python 3.10 through 3.13. For a local checkout, create an
+isolated environment and install the project in editable mode:
 
 ```bash
-pip3 install hypermax -g
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
 ```
 
-Python3 is required.
+On macOS, Adaptive-TPE's LightGBM dependency also needs the OpenMP runtime:
+
+```bash
+brew install libomp
+```
+
+Confirm the command is available with `hypermax --help`.
 
 # Getting Started (Using Python Library)
 
@@ -39,7 +49,7 @@ Here is an example. Lets say you have the following file, model.py:
 import sklearn.datasets
 import sklearn.ensemble
 import sklearn.metrics
-import datetime
+from datetime import datetime
 
 def trainModel(params):
     inputs, outputs = sklearn.datasets.make_hastie_10_2()
@@ -52,9 +62,9 @@ def trainModel(params):
 
     finishTime = datetime.now()
 
-    auc = sklearn.metrics.auc(outputs, predicted)
+    auc = sklearn.metrics.roc_auc_score(outputs, predicted)
 
-    return {"loss": auc, "time": (finishTime - startTime).total_seconds()}
+    return {"loss": 1 - auc, "time": (finishTime - startTime).total_seconds()}
 ```
 
 You configure your hyper parameter search space by defining a JSON-schema object with the needed values:

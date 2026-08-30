@@ -5,7 +5,7 @@ from datetime import datetime
 
 
 def trainModel(params):
-    inputs, outputs = sklearn.datasets.load_breast_cancer(True)
+    inputs, outputs = sklearn.datasets.load_breast_cancer(return_X_y=True)
 
     startTime = datetime.now()
 
@@ -31,5 +31,4 @@ def trainModel(params):
     result = {"accuracy": accuracy/total, "time": (finishTime - startTime).total_seconds()}
     print(result)
     return result
-
 

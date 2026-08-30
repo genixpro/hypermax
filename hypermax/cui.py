@@ -1,5 +1,4 @@
 import urwid
-import urwid.html_fragment
 
 from pprint import pformat
 import numpy
@@ -807,4 +806,3 @@ def launchHypermaxUI(optimizer):
         pass
     finally:
         loop.stop()
-

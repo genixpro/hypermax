@@ -5,9 +5,9 @@ import random
 import numpy
 import numpy.random
 import json
-import pkg_resources
+from importlib.resources import files
 from hypermax.hyperparameter import Hyperparameter
-import sklearn
+from sklearn.preprocessing import StandardScaler
 import lightgbm
 import scipy.stats
 import math
@@ -171,22 +171,24 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
     ]
 
     def __init__(self):
-        scalingModelData = json.loads(pkg_resources.resource_string(__name__, "../atpe_models/scaling_model.json"))
+        modelDirectory = files("hypermax").joinpath("atpe_models")
+        scalingModelData = json.loads(modelDirectory.joinpath("scaling_model.json").read_text(encoding="utf-8"))
         self.featureScalingModels = {}
         for key in self.atpeModelFeatureKeys:
-            self.featureScalingModels[key] = sklearn.preprocessing.StandardScaler()
+            self.featureScalingModels[key] = StandardScaler()
             self.featureScalingModels[key].scale_ = numpy.array(scalingModelData[key]['scales'])
             self.featureScalingModels[key].mean_ = numpy.array(scalingModelData[key]['means'])
             self.featureScalingModels[key].var_ = numpy.array(scalingModelData[key]['variances'])
+            self.featureScalingModels[key].n_features_in_ = len(scalingModelData[key]['means'])
 
         self.parameterModels = {}
         self.parameterModelConfigurations = {}
         for param in self.atpeParameters:
-            modelData = pkg_resources.resource_string(__name__, "../atpe_models/model-" + param + '.txt')
+            modelData = modelDirectory.joinpath("model-" + param + '.txt').read_bytes()
             with hypermax.file_utils.ClosedNamedTempFile(modelData) as model_file_name:
                 self.parameterModels[param] = lightgbm.Booster(model_file=model_file_name)
 
-            configString = pkg_resources.resource_string(__name__, "../atpe_models/model-" + param + '-configuration.json')
+            configString = modelDirectory.joinpath("model-" + param + '-configuration.json').read_text(encoding="utf-8")
             data = json.loads(configString)
             self.parameterModelConfigurations[param] = data
 
@@ -195,7 +197,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         self.atpeParamDetails = None
 
     def recommendNextParameters(self, hyperparameterSpace, results, currentTrials, lockedValues=None):
-        rstate = numpy.random.RandomState(seed=int(random.randint(1, 2 ** 32 - 1)))
+        rstate = numpy.random.default_rng(seed=random.randint(1, 2 ** 32 - 1))
 
         params = {}
         def sample(parameters):

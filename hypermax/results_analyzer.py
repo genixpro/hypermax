@@ -4,7 +4,8 @@ import os.path
 import math
 import csv
 from hypermax.hyperparameter import Hyperparameter
-import sklearn.covariance
+from sklearn.covariance import LedoitWolf
+from sklearn.linear_model import LinearRegression
 import numpy
 from hypermax.utils import roundPrecision
 import matplotlib
@@ -13,7 +14,6 @@ import matplotlib.style as mplstyle
 import matplotlib.pyplot as plt
 from pprint import pprint
 import concurrent.futures
-import colors
 import traceback
 import functools
 import warnings
@@ -209,8 +209,15 @@ class ResultsAnalyzer:
         guidanceFile = os.path.join(directory, 'guidance.json')
         optimizer.exportGuidanceJSON(guidanceFile)
 
+        serializableConfig = copy.deepcopy(optimizer.config.data)
+        functionConfig = serializableConfig.get('function', {})
+        if callable(functionConfig.get('func')):
+            # In-process callables are a library-only convenience and cannot be
+            # represented in the restart configuration written to disk.
+            del functionConfig['func']
+
         with open(os.path.join(directory, 'search.json'), 'wt') as paramsFile:
-            json.dump(optimizer.config.data, paramsFile, indent=4, sort_keys=True)
+            json.dump(serializableConfig, paramsFile, indent=4, sort_keys=True)
 
         clonedSortedResults = sorted(copy.deepcopy([result for result in optimizer.results if result['loss'] is not None]), key=lambda result: result['loss'])
         if len(clonedSortedResults) > 0:
@@ -780,10 +787,10 @@ class ResultsAnalyzer:
                 if not labels:
                     labels = vectorLabels
 
-        covarianceModel = sklearn.covariance.LedoitWolf()
+        covarianceModel = LedoitWolf()
         covarianceModel.fit(numpy.array(vectors), numpy.array(outputs))
 
-        correlationModel = sklearn.linear_model.LinearRegression()
+        correlationModel = LinearRegression()
         correlationModel.fit(numpy.array(vectors), numpy.array(outputs))
         coefficients = correlationModel.coef_
 

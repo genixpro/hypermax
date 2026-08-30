@@ -1,33 +1,22 @@
-import hyperopt
 import csv
 import json
-import traceback
 import os.path
 from pprint import pprint
 import datetime
 import time
-import numpy.random
 import threading
-import queue
 import copy
 import tempfile
-import random
 import subprocess
 import concurrent.futures
-import tempfile
 import functools
-import math
 import atexit
-import jsonschema
-import pkg_resources
 from hypermax.execution import Execution
 from hypermax.hyperparameter import Hyperparameter
 from hypermax.results_analyzer import ResultsAnalyzer
-from hypermax.algorithms.atpe_optimizer import ATPEOptimizer
 from hypermax.algorithms.human_guided_optimizer_wrapper import HumanGuidedOptimizerWrapper
 from hypermax.algorithms.tpe_optimizer import TPEOptimizer
 from hypermax.algorithms.random_search_optimizer import RandomSearchOptimizer
-from hypermax.algorithms.adaptive_bayesian_hyperband_optimizer import AdaptiveBayesianHyperband
 
 from hypermax.configuration import Configuration
 
@@ -46,7 +35,18 @@ class Optimizer:
         self.config = Configuration(configuration)
 
         self.searchConfig = configuration.get('search', {})
-        # jsonschema.validate(self.searchConfig, self.configurationSchema())
+
+        method = self.searchConfig.get("method")
+        if method not in {"random", "tpe", "atpe", "abh"}:
+            raise ValueError("search.method must be one of: random, tpe, atpe, abh")
+
+        iterations = self.searchConfig.get("iterations")
+        if not isinstance(iterations, int) or isinstance(iterations, bool) or iterations < 1:
+            raise ValueError("search.iterations must be a positive integer")
+
+        parallel = configuration.get("function", {}).get("parallel", 1)
+        if not isinstance(parallel, int) or isinstance(parallel, bool) or parallel < 1:
+            raise ValueError("function.parallel must be a positive integer")
 
         self.space = self.config.createHyperparameterSpace()
 
@@ -62,12 +62,12 @@ class Optimizer:
 
         self.thread = threading.Thread(target=lambda: self.optimizationThread(), daemon=True if configuration.get("ui", {}).get("enabled", True) else False)
 
-        self.totalTrials = self.searchConfig.get("iterations")
+        self.totalTrials = iterations
         self.trialsSinceResultsUpload = None
         self.resultsExportFuture = None
 
         self.currentTrials = []
-        self.allWorkers = set(range(self.config.data['function'].get('parallel', 1)))
+        self.allWorkers = set(range(parallel))
         self.occupiedWorkers = set()
         self.trialNumber = 0
 
@@ -76,14 +76,38 @@ class Optimizer:
         self.atpeParamDetails = None
 
         self.tpeOptimizer = TPEOptimizer()
-        self.atpeOptimizer = ATPEOptimizer()
-        self.abhOptimizer = AdaptiveBayesianHyperband(self.atpeOptimizer, self.searchConfig.get("min_budget", 1), self.searchConfig.get("max_budget", 100), self.searchConfig.get("eta", 3))
-        self.humanGuidedATPEOptimizer = HumanGuidedOptimizerWrapper(self.atpeOptimizer)
         self.randomSearchOptimizer = RandomSearchOptimizer()
+        self.atpeOptimizer = None
+        self.abhOptimizer = None
+
+        if method in {"atpe", "abh"}:
+            try:
+                from hypermax.algorithms.atpe_optimizer import ATPEOptimizer
+            except (ImportError, OSError) as exc:
+                raise RuntimeError(
+                    "Adaptive-TPE could not load LightGBM. On macOS, install the "
+                    "OpenMP runtime with `brew install libomp`, then retry."
+                ) from exc
+
+            self.atpeOptimizer = ATPEOptimizer()
+            if method == "abh":
+                from hypermax.algorithms.adaptive_bayesian_hyperband_optimizer import AdaptiveBayesianHyperband
+
+                self.abhOptimizer = AdaptiveBayesianHyperband(
+                    self.atpeOptimizer,
+                    self.searchConfig.get("min_budget", 1),
+                    self.searchConfig.get("max_budget", 100),
+                    self.searchConfig.get("eta", 3),
+                )
+
+        self.humanGuidedATPEOptimizer = HumanGuidedOptimizerWrapper(
+            self.atpeOptimizer or self.tpeOptimizer
+        )
 
     def __del__(self):
-        if self.threadExecutor:
-            self.threadExecutor.shutdown(wait=True)
+        threadExecutor = getattr(self, "threadExecutor", None)
+        if threadExecutor:
+            threadExecutor.shutdown(wait=True)
 
 
     @classmethod
@@ -93,8 +117,8 @@ class Optimizer:
         return {
             "type": "object",
             "properties": {
-                "method": {"type": "string", "enum": ['atpe', 'tpe', 'random']},
-                "iterations": {"type": "number"},
+                "method": {"type": "string", "enum": ['atpe', 'tpe', 'random', 'abh']},
+                "iterations": {"type": "integer", "minimum": 1},
                 "budget": {"type": "number"}
             },
             "required": ['method', 'iterations']
@@ -136,23 +160,9 @@ class Optimizer:
         availableWorkers = list(sorted(self.allWorkers.difference(self.occupiedWorkers)))
 
         sampleWorker = availableWorkers[0]
-        sample = None
-        while sample is None:
-            # Hedge against any exceptions in the atpe optimizer.
-            try:
-                sample = self.sampleNext()
-            except Exception:
-                traceback.print_exc()
-                pass
+        sample = self.sampleNext()
 
-        def testSample(params, trial, worker):
-            currentTrial = {
-                "start": datetime.datetime.now(),
-                "trial": trial,
-                "worker": worker,
-                "params": copy.deepcopy(params)
-            }
-            self.currentTrials.append(currentTrial)
+        def testSample(params, trial, worker, currentTrial):
             start = datetime.datetime.now()
             execution = Execution(self.config.data['function'], parameters=params, worker_n=worker)
             modelResult = execution.run()
@@ -199,32 +209,47 @@ class Optimizer:
 
             return result
 
+        completionEvent = threading.Event()
+
         def onCompletion(worker, future):
-            self.occupiedWorkers.remove(worker)
+            try:
+                self.occupiedWorkers.remove(worker)
 
-            self.results.append(future.result())
+                self.results.append(future.result())
 
-            self.computeCurrentBest()
+                self.computeCurrentBest()
 
-            if not self.config.data.get("ui", {}).get("enabled", True):
-                pprint(future.result())
+                if not self.config.data.get("ui", {}).get("enabled", True):
+                    pprint(future.result())
 
-            if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results) > 5):
-                self.resultsExportFuture = self.threadExecutor.submit(
-                    lambda: self.outputResultsWithBackup(self.config.data.get("results", {}).get("graphs", True)))
-            else:
-                self.outputResultsWithBackup(False)
-
-            if 'hypermax_results' in self.config.data:
-                if self.trialsSinceResultsUpload is None or self.trialsSinceResultsUpload >= self.config.data['hypermax_results']['upload_frequency']:
-                    self.saveResultsToHypermaxResultsRepository()
-                    self.trialsSinceResultsUpload = 1
+                if self.resultsExportFuture is None or (self.resultsExportFuture.done() and len(self.results) > 5):
+                    self.resultsExportFuture = self.threadExecutor.submit(
+                        lambda: self.outputResultsWithBackup(self.config.data.get("results", {}).get("graphs", True)))
                 else:
-                    self.trialsSinceResultsUpload += 1
+                    self.outputResultsWithBackup(False)
+
+                if 'hypermax_results' in self.config.data:
+                    if self.trialsSinceResultsUpload is None or self.trialsSinceResultsUpload >= self.config.data['hypermax_results']['upload_frequency']:
+                        self.saveResultsToHypermaxResultsRepository()
+                        self.trialsSinceResultsUpload = 1
+                    else:
+                        self.trialsSinceResultsUpload += 1
+            finally:
+                completionEvent.set()
 
         self.occupiedWorkers.add(sampleWorker)
-        sampleFuture = self.threadExecutor.submit(testSample, sample, self.trialNumber, sampleWorker)
+        currentTrial = {
+            "start": datetime.datetime.now(),
+            "trial": self.trialNumber,
+            "worker": sampleWorker,
+            "params": copy.deepcopy(sample),
+        }
+        self.currentTrials.append(currentTrial)
+        sampleFuture = self.threadExecutor.submit(
+            testSample, sample, self.trialNumber, sampleWorker, currentTrial
+        )
         sampleFuture.add_done_callback(functools.partial(onCompletion, sampleWorker))
+        sampleFuture.completionEvent = completionEvent
         self.trialNumber += 1
         return sampleFuture
 
@@ -239,23 +264,38 @@ class Optimizer:
 
     def optimizationThread(self):
         # Make sure we output basic results if the process is killed for some reason.
-        atexit.register(lambda: self.outputResultsWithBackup(False))
+        backupHandler = lambda: self.outputResultsWithBackup(False)
+        atexit.register(backupHandler)
 
         futures = []
         for worker in range(min(len(self.allWorkers), self.totalTrials - len(self.results))):
             futures.append(self.startOptmizationJob())
-            time.sleep(1.0)
 
-        while (len(self.results) + len(self.currentTrials)) < self.totalTrials:
+        # ``currentTrials`` is populated inside worker threads, so using it to
+        # decide whether to submit more work races with fast model functions and
+        # can overshoot the configured iteration count. ``trialNumber`` is
+        # incremented synchronously when each job is submitted.
+        while self.trialNumber < self.totalTrials:
             completedFuture = list(concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)[0])[0]
+            completedFuture.completionEvent.wait()
+            completedFuture.result()
             futures.remove(completedFuture)
             time.sleep(0.05)
             futures.append(self.startOptmizationJob())
 
         concurrent.futures.wait(futures)
+        for future in futures:
+            future.completionEvent.wait()
+            future.result()
+
+        if self.resultsExportFuture is not None:
+            self.resultsExportFuture.result()
 
         # We are completed, so we can allocate a full contingent of workers
-        self.outputResultsWithBackup(True, workers=4)
+        self.outputResultsWithBackup(
+            self.config.data.get("results", {}).get("graphs", True), workers=4
+        )
+        atexit.unregister(backupHandler)
 
     def exportGuidanceJSON(self, fileName):
         with open(fileName, 'wt') as file:
