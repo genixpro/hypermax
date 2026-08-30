@@ -132,6 +132,7 @@ def derive_factorized_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         first = repeats[0]
         utilities = [float(row["utility"]) for row in repeats]
         failures = sum(len(row.get("failures", [])) for row in repeats)
+        rollout_steps = sum(int(row.get("rollout_steps", 5)) for row in repeats)
         states[state_id].append(
             {
                 **{
@@ -154,7 +155,7 @@ def derive_factorized_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 },
                 "utility": float(np.mean(utilities)),
                 "rollout_variability": _rollout_downside(utilities),
-                "failed_step_fraction": failures / float(max(1, 5 * len(repeats))),
+                "failed_step_fraction": failures / float(max(1, rollout_steps)),
                 "mandatory_repeat_count": len(repeats),
             }
         )

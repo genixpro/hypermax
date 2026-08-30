@@ -47,7 +47,20 @@ from .factorized import (
     normalize_component,
     robust_support_artifact,
 )
+from .continuation import CONTINUATION_LONG_WEIGHTS
 from .train import grouped_split, sqlite_snapshot_hash
+
+
+TEACHER_CLASSES = {
+    "search": ("balanced", "exploit", "explore"),
+    "filtering": ("age", "loss_rank", "none", "random"),
+    "locking": (
+        "correlation:random",
+        "correlation:top",
+        "fixed:random",
+        "fixed:top",
+    ),
+}
 
 
 def _artifact(path: Path) -> dict[str, str]:
@@ -129,6 +142,67 @@ def _fit_regressor(
     )
     model.fit(matrix, target, sample_weight=weights)
     return model
+
+
+def _fit_teacher_predictors(
+    teacher_rows: list[dict[str, Any]],
+    extractor: Any,
+    train_task_ids: set[str],
+    output: Path,
+    seed: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    eligible = [
+        row
+        for row in teacher_rows
+        if row["task_id"] in train_task_ids and row["eligible"]
+    ]
+    if not eligible:
+        raise ValueError("Teacher branch requires eligible paired classic labels")
+    matrix = np.asarray(
+        [extractor.vector(row["space"], row["history"], []) for row in eligible],
+        dtype=float,
+    )
+    models: dict[str, Any] = {}
+    artifacts: dict[str, Any] = {}
+    for mode_index, (mode, classes) in enumerate(TEACHER_CLASSES.items()):
+        field = f"{mode}_regime" if mode == "search" else f"{mode}_mode"
+        labels = [row[field] for row in eligible]
+        unknown = sorted(set(labels) - set(classes))
+        if unknown:
+            raise ValueError(f"Unknown classic teacher {mode} labels: {unknown}")
+        # Zero-weight pseudo examples establish a stable full probability width
+        # even when one class is absent from this particular bootstrap split.
+        augmented_matrix = np.vstack((matrix, np.repeat(matrix[:1], len(classes), axis=0)))
+        augmented_labels = np.asarray(labels + list(classes), dtype=object)
+        weights = np.concatenate(
+            (np.ones(len(labels)), np.full(len(classes), 1e-12))
+        )
+        model = lgb.LGBMClassifier(
+            objective="multiclass",
+            num_class=len(classes),
+            n_estimators=12,
+            num_leaves=7,
+            min_child_samples=5,
+            learning_rate=0.05,
+            reg_lambda=1.0,
+            random_state=seed + mode_index,
+            deterministic=True,
+            force_col_wise=True,
+            verbosity=-1,
+        )
+        model.fit(augmented_matrix, augmented_labels, sample_weight=weights)
+        path = output / f"teacher-{mode}.txt"
+        artifacts[mode] = _save_model(model, path)
+        models[mode] = model
+    return models, artifacts
+
+
+def _teacher_features(models: dict[str, Any], context: np.ndarray) -> np.ndarray:
+    values = []
+    for mode in ("search", "filtering", "locking"):
+        probabilities = np.asarray(models[mode].predict_proba(context[None, :]))[0]
+        values.extend(float(value) for value in probabilities)
+    return np.asarray(values, dtype=float)
 
 
 def _ranker_dataset(
@@ -338,7 +412,9 @@ def component_gate_report(
     downside_prediction: np.ndarray,
     catastrophic_prediction: np.ndarray,
     support: np.ndarray,
+    branch: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    branch = branch or {"residual": True, "downside": True, "support": True}
     position = {index: offset for offset, index in enumerate(validation_indices)}
     directional: dict[str, list[bool]] = defaultdict(list)
     family_isolated_delta: dict[str, list[float]] = defaultdict(list)
@@ -425,12 +501,25 @@ def component_gate_report(
         ),
         "isolated_group_family_delta_at_least_minus_0_02": bool(family_means)
         and min(family_means.values()) >= -0.02,
-        "residual_improves_full_action_error": residual_mse < additive_mse,
-        "catastrophic_auroc_at_least_0_65": auroc >= 0.65,
-        "catastrophic_brier_beats_constant": brier < constant_brier,
-        "support_error_non_decreasing": support_correlation >= 0.0,
-        "support_telemetry_finite_and_monotonic": bool(np.all(np.isfinite(support)))
-        and bool(np.all(np.diff(np.sort(support)) >= 0.0)),
+        "residual_improves_full_action_error": (
+            not branch.get("residual") or residual_mse < additive_mse
+        ),
+        "catastrophic_auroc_at_least_0_65": (
+            not branch.get("downside") or auroc >= 0.65
+        ),
+        "catastrophic_brier_beats_constant": (
+            not branch.get("downside") or brier < constant_brier
+        ),
+        "support_error_non_decreasing": (
+            not branch.get("support") or support_correlation >= 0.0
+        ),
+        "support_telemetry_finite_and_monotonic": (
+            not branch.get("support")
+            or (
+                bool(np.all(np.isfinite(support)))
+                and bool(np.all(np.diff(np.sort(support)) >= 0.0))
+            )
+        ),
         "adaptive_policy_has_no_runtime_fallback": True,
     }
     return {
@@ -474,6 +563,7 @@ def train_factorized(
     trees: int = 12,
     leaf_index: int = 0,
     require_clean_source: bool = False,
+    long_horizon_weight: float = 0.0,
 ) -> dict[str, Any]:
     if branch_name not in ABLATION_BRANCHES:
         raise ValueError(f"Unknown ablation branch: {branch_name}")
@@ -482,8 +572,30 @@ def train_factorized(
         raise ValueError("structured_joint uses the existing joint trainer")
     if trees not in TREE_GRID or not 0 <= leaf_index < len(LEAF_GRID):
         raise ValueError("trees/leaf choice is outside the predeclared grid")
+    if long_horizon_weight not in CONTINUATION_LONG_WEIGHTS:
+        raise ValueError("long-horizon weight is outside the predeclared grid")
     with ResearchStore(database) as store:
         raw_rows = store.training_rows()
+        continuation_rows = store.continuation_rows() if branch.get("multi_horizon") else []
+        teacher_rows = store.teacher_rows() if branch.get("teacher") else []
+    if branch.get("multi_horizon"):
+        if not continuation_rows or any(
+            row["utility_5"] is None or row["utility_15"] is None
+            for row in continuation_rows
+        ):
+            raise ValueError("Multi-horizon branch requires complete continuation targets")
+        raw_rows.extend(
+            {
+                **row,
+                "acquisition_round": 1,
+                "rollout_steps": 15,
+                "utility": (
+                    (1.0 - long_horizon_weight) * float(row["utility_5"])
+                    + long_horizon_weight * float(row["utility_15"])
+                ),
+            }
+            for row in continuation_rows
+        )
     rows = derive_factorized_rows(raw_rows)
     rounds = {int(row["acquisition_round"]) for row in rows}
     if rounds != {0, 1}:
@@ -507,6 +619,18 @@ def train_factorized(
     rng = np.random.default_rng(seed)
     leaves = dict(LEAF_GRID[leaf_index])
     train_tasks = sorted({rows[index]["task_id"] for index in train_indices})
+    teacher_models: dict[str, Any] = {}
+    teacher_artifacts: dict[str, Any] = {}
+    if branch.get("teacher"):
+        teacher_models, teacher_artifacts = _fit_teacher_predictors(
+            teacher_rows, extractor, set(train_tasks), output, seed + 50_000
+        )
+        contexts = {
+            state_id: np.concatenate(
+                (context, _teacher_features(teacher_models, context))
+            )
+            for state_id, context in contexts.items()
+        }
     members: list[dict[str, Any]] = []
     fitted_members: list[dict[str, Any]] = []
 
@@ -678,6 +802,7 @@ def train_factorized(
         downside_prediction,
         downside_heads["catastrophic"],
         support,
+        branch,
     )
 
     feature_schema_hash = hashlib.sha256(
@@ -693,11 +818,13 @@ def train_factorized(
             {
                 "members": members,
                 "support": _artifact(support_path),
+                "teacher_artifacts": teacher_artifacts,
                 "training_hash": training_hash,
                 "branch": branch_name,
                 "trees": trees,
                 "leaves": leaves,
                 "seed": seed,
+                "long_horizon_weight": long_horizon_weight,
             }
         ).encode()
     ).hexdigest()
@@ -710,6 +837,21 @@ def train_factorized(
         "model_artifact_sha256": identity,
         "members": members,
         "support_artifact": _artifact(support_path),
+        "teacher_artifacts": teacher_artifacts,
+        "teacher_classes": (
+            {name: list(values) for name, values in TEACHER_CLASSES.items()}
+            if branch.get("teacher")
+            else {}
+        ),
+        "teacher_feature_names": (
+            [
+                f"classic_{mode}_probability_{value}"
+                for mode, values in TEACHER_CLASSES.items()
+                for value in values
+            ]
+            if branch.get("teacher")
+            else []
+        ),
         "feature_schema_version": extractor.version,
         "feature_schema_hash": feature_schema_hash,
         "action_schema_version": ACTION_SCHEMA_VERSION,
@@ -722,7 +864,7 @@ def train_factorized(
             "retained_per_group": 6,
             "beam_width": 64,
             "full_action_exploration_candidates": 1,
-            "max_supported_distance": 0.95,
+            "max_supported_distance": 0.95 if branch.get("support") else 1e9,
             "deterministic": True,
             "fallback_to_tpe": False,
         },
@@ -770,6 +912,7 @@ def train_factorized(
         },
         "architecture_branch": branch_name,
         "architecture": branch,
+        "long_horizon_weight": long_horizon_weight,
         "model_training": {
             "ensemble_members": 8,
             "trees_per_component": trees,
@@ -797,6 +940,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--trees", type=int, choices=TREE_GRID, default=12)
     parser.add_argument("--leaf-index", type=int, choices=range(len(LEAF_GRID)), default=0)
     parser.add_argument("--require-clean-source", action="store_true")
+    parser.add_argument(
+        "--long-horizon-weight",
+        type=float,
+        choices=CONTINUATION_LONG_WEIGHTS,
+        default=0.0,
+    )
     args = parser.parse_args(argv)
     manifest = train_factorized(
         args.database,
@@ -806,6 +955,7 @@ def main(argv: list[str] | None = None) -> None:
         args.trees,
         args.leaf_index,
         args.require_clean_source,
+        args.long_horizon_weight,
     )
     print(
         json.dumps(

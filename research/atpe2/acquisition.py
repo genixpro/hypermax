@@ -241,18 +241,34 @@ def structured_action_candidates(
         refill_index = 0
         while key in seen:
             varied = candidate.varied_groups or tuple(ACTION_GROUPS)
-            names = tuple(
-                name for group in varied for name in ACTION_GROUPS[group]
-            )
-            point = _sobol(
-                seed + 1_000_000 + slot_index * 10_000 + refill_index,
-                len(names),
-                1,
-            )[0]
-            values = asdict(ATPE2Action.anchor())
-            for name, coordinate in zip(names, point):
-                values[name] = _sample_value(name, coordinate, ranges)
-            action = ATPE2Action(**values)
+            if len(varied) >= 2 and (
+                candidate.role.startswith("two_group")
+                or candidate.role == "full_action_regime"
+            ):
+                # Interaction targets must retain exact isolated-group matches
+                # after refill so their additive decomposition stays defined.
+                action = _combine(
+                    {
+                        group: group_actions[group][
+                            (slot_index + refill_index * (group_index + 2))
+                            % len(group_actions[group])
+                        ]
+                        for group_index, group in enumerate(varied)
+                    }
+                )
+            else:
+                names = tuple(
+                    name for group in varied for name in ACTION_GROUPS[group]
+                )
+                point = _sobol(
+                    seed + 1_000_000 + slot_index * 10_000 + refill_index,
+                    len(names),
+                    1,
+                )[0]
+                values = asdict(ATPE2Action.anchor())
+                for name, coordinate in zip(names, point):
+                    values[name] = _sample_value(name, coordinate, ranges)
+                action = ATPE2Action(**values)
             key = canonical_action(action)
             refill_index += 1
             if refill_index > 4096:

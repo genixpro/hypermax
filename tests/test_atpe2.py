@@ -356,6 +356,56 @@ def test_frozen_manifest_and_models_load_from_package_resources():
     assert ensemble.schema_compatible
 
 
+def test_existing_frozen_joint_manifest_scores_identically_after_loader_extension():
+    first = ATPE2ModelEnsemble.load_default()
+    second = ATPE2ModelEnsemble.load_default()
+    width = len(ATPE2FeatureExtractor.FEATURE_NAMES) + len(first.action_names)
+    matrix = np.random.default_rng(91).normal(size=(7, width))
+
+    first_mean, first_uncertainty = first.predict(matrix)
+    second_mean, second_uncertainty = second.predict(matrix)
+
+    assert np.array_equal(first_mean, second_mean)
+    assert np.array_equal(first_uncertainty, second_uncertainty)
+
+
+def test_teacher_features_are_probabilities_and_do_not_execute_classic_atpe():
+    class ProbabilityModel:
+        def __init__(self, width):
+            self.width = width
+
+        def predict(self, matrix, num_threads=1):
+            del num_threads
+            values = np.arange(1, self.width + 1, dtype=float)
+            values /= np.sum(values)
+            return np.repeat(values[None, :], len(matrix), axis=0)
+
+    manifest = {
+        "teacher_classes": {
+            "search": ["balanced", "exploit", "explore"],
+            "filtering": ["age", "loss_rank", "none", "random"],
+            "locking": ["correlation:random", "correlation:top", "fixed:random", "fixed:top"],
+        }
+    }
+    ensemble = ATPE2ModelEnsemble(
+        manifest,
+        [],
+        teacher_models={
+            "search": ProbabilityModel(3),
+            "filtering": ProbabilityModel(4),
+            "locking": ProbabilityModel(4),
+        },
+    )
+    context = np.arange(5, dtype=float)
+    augmented = ensemble.augment_context(context)
+
+    assert np.array_equal(augmented[:5], context)
+    assert len(augmented) == 16
+    assert np.sum(augmented[5:8]) == pytest.approx(1.0)
+    assert np.sum(augmented[8:12]) == pytest.approx(1.0)
+    assert np.sum(augmented[12:16]) == pytest.approx(1.0)
+
+
 def test_manifest_schema_requires_an_exact_retained_or_fixed_knob_partition():
     ensemble = ATPE2ModelEnsemble.load_default()
     malformed = json.loads(json.dumps(ensemble.manifest))

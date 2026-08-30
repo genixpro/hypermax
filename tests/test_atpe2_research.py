@@ -24,6 +24,11 @@ from research.atpe2.factorized import (
 )
 from research.atpe2.factorized_screen import assess_five_quick_screens
 from research.atpe2.merge_databases import merge_database_shards
+from research.atpe2.select_factorized import (
+    select_behavioral_variants,
+    select_manifest_variants,
+)
+from research.atpe2.fit_grid import BASE_BRANCHES, declared_jobs
 from research.atpe2.train import grouped_split
 from research.atpe2.train_factorized import train_factorized
 from research.atpe2.gates import (
@@ -174,6 +179,53 @@ def test_disjoint_database_shards_merge_resumably(tmp_path):
         assert len(store.training_rows()) == 2
 
 
+def test_continuation_and_teacher_artifacts_are_resumable(tmp_path):
+    database = tmp_path / "later.sqlite"
+    with ResearchStore(database) as store:
+        store.upsert_task(
+            "task",
+            "smooth",
+            {"task_id": "task", "family": "smooth", "space": {}, "seed": 1},
+            "generator",
+        )
+        state_id = store.upsert_state("task", "tpe", "lineage", 25, [], {}, 1)
+        record = {
+            "state_id": state_id,
+            "configuration": ATPE2Action.anchor().__dict__,
+            "acquisition_role": "neutral_anchor",
+            "varied_groups": [],
+            "rollout_seed": 7,
+            "repeat_index": 0,
+            "forced_curve": [5, 4, 3, 2, 1],
+            "continuation_curve": [1] * 10,
+            "failures": [],
+            "provisional_manifest_sha256": "a" * 64,
+        }
+        assert store.add_continuation(record)
+        assert not store.add_continuation(record)
+        continuation = store.continuation_rows()[0]
+        store.set_continuation_utilities(continuation["continuation_id"], 0.5, 0.75)
+        store.upsert_teacher_label(
+            {
+                "state_id": state_id,
+                "search_regime": "balanced",
+                "filtering_mode": "none",
+                "locking_mode": "fixed:top",
+                "classic_utility": 0.5,
+                "anchor_utility": 0.5,
+                "eligible": True,
+                "metadata": {"runtime_executes_classic_atpe": False},
+            }
+        )
+
+        continuation = store.continuation_rows()[0]
+        teacher = store.teacher_rows()[0]
+        assert continuation["utility_15"] == pytest.approx(0.75)
+        assert len(continuation["forced_curve"] + continuation["continuation_curve"]) == 15
+        assert teacher["eligible"] is True
+        assert teacher["metadata"]["runtime_executes_classic_atpe"] is False
+
+
 def test_scale_free_label_ranks_each_paired_step():
     records = [
         {"configuration_hash": "a", "rollout_seed": 1, "repeat_index": 0, "incumbent_curve": [5, 4, 3, 2, 1]},
@@ -242,6 +294,19 @@ def test_structured_round_one_has_exact_roles_isolation_and_deterministic_refill
     assert sum(role.startswith("two_group") for role in roles) == 18
     assert roles.count("full_action_regime") == 8
     assert roles.count("highest_disagreement") == 5
+    isolated_keys = {
+        group: {
+            tuple(getattr(record.action, name) for name in names)
+            for record in first
+            if record.varied_groups == (group,)
+        }
+        | {tuple(getattr(ATPE2Action.anchor(), name) for name in names)}
+        for group, names in {
+            "search": ("gamma", "n_ei_candidates"),
+            "history": ("history_keep_fraction", "history_recency_bias", "history_quality_bias"),
+            "locking": ("secondary_fraction", "secondary_lock_probability", "secondary_top_fraction"),
+        }.items()
+    }
     for record in first:
         if len(record.varied_groups) == 1:
             group = record.varied_groups[0]
@@ -253,6 +318,14 @@ def test_structured_round_one_has_exact_roles_isolation_and_deterministic_refill
                     "locking": ("secondary_fraction", "secondary_lock_probability", "secondary_top_fraction"),
                 }[other_group]
                 assert record.action.vector_for(names).tolist() == neutral.vector_for(names).tolist()
+        if record.role.startswith("two_group") or record.role == "full_action_regime":
+            for group in record.varied_groups:
+                names = {
+                    "search": ("gamma", "n_ei_candidates"),
+                    "history": ("history_keep_fraction", "history_recency_bias", "history_quality_bias"),
+                    "locking": ("secondary_fraction", "secondary_lock_probability", "secondary_top_fraction"),
+                }[group]
+                assert tuple(getattr(record.action, name) for name in names) in isolated_keys[group]
 
 
 def test_structured_lineage_hashes_manifest_and_ordered_mapping():
@@ -443,6 +516,10 @@ def test_factorized_miniature_database_fit_runtime_and_reload(tmp_path):
     assert isinstance(action, ATPE2Action)
     assert controller.last_record["decision_mode"] == "adaptive_model"
     assert controller.last_record["fallback_reason"] is None
+    reproduced_support = tmp_path / "model-reproduced" / "support.json"
+    reproduced_support.write_text("{}\n")
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        ATPE2ModelEnsemble.load(tmp_path / "model-reproduced" / "manifest.json")
 
 
 def test_five_quick_assessment_enforces_seed_family_classic_and_overhead_gates():
@@ -497,6 +574,39 @@ def test_five_quick_assessment_enforces_seed_family_classic_and_overhead_gates()
     assert assessment["passed"]
     assert assessment["classic_gap"]["deficit_closure_fraction"] >= 0.5
     assert assessment["controller_overhead_ratio"] == pytest.approx(1.2)
+
+
+def test_variant_pruning_rejects_failed_gates_and_caps_both_stages(tmp_path):
+    manifests = []
+    for index in range(15):
+        manifest = {
+            "model_version": f"model-{index}",
+            "model_artifact_sha256": f"{index:064d}",
+            "architecture_branch": "context_v4",
+            "component_gates": {"passed": index != 14},
+            "score_grid": [
+                {"held_out_stable_policy_quality": float(index)}
+            ],
+        }
+        manifests.append((tmp_path / f"manifest-{index}.json", manifest))
+    selected = select_manifest_variants(manifests)
+    quality = {
+        row["model_artifact_sha256"]: row["held_out_stable_policy_quality"]
+        for row in selected
+    }
+    behavioral = select_behavioral_variants(selected, quality)
+
+    assert len(selected) == 12
+    assert all(row["model_version"] != "model-14" for row in selected)
+    assert len(behavioral) == 6
+
+
+def test_declared_grid_is_bounded_and_shardable_without_duplicates():
+    jobs = declared_jobs(BASE_BRANCHES)
+
+    assert len(jobs) == 3 + 5 * 3 * 9
+    assert len({json.dumps(job, sort_keys=True) for job in jobs}) == len(jobs)
+    assert {job["trees"] for job in jobs} == {8, 12, 16}
 
 
 def test_third_repeat_selection_can_be_recomputed_from_paired_rows_only():

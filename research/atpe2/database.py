@@ -11,7 +11,7 @@ import sqlite3
 from typing import Any, Iterator
 
 
-SCHEMA_VERSION = "atpe2-research-sqlite-v2"
+SCHEMA_VERSION = "atpe2-research-sqlite-v3"
 
 
 def canonical_json(value: Any) -> str:
@@ -95,6 +95,35 @@ class ResearchStore:
             );
             CREATE INDEX IF NOT EXISTS evaluations_state ON evaluations(state_id);
             CREATE INDEX IF NOT EXISTS states_lineage ON states(task_id, trajectory_lineage);
+            CREATE TABLE IF NOT EXISTS continuation_evaluations (
+                continuation_id TEXT PRIMARY KEY,
+                state_id TEXT NOT NULL REFERENCES states(state_id),
+                configuration_json TEXT NOT NULL,
+                configuration_hash TEXT NOT NULL,
+                acquisition_role TEXT NOT NULL,
+                varied_groups_json TEXT NOT NULL,
+                rollout_seed INTEGER NOT NULL,
+                repeat_index INTEGER NOT NULL,
+                forced_curve_json TEXT NOT NULL,
+                continuation_curve_json TEXT NOT NULL,
+                failures_json TEXT NOT NULL,
+                provisional_manifest_sha256 TEXT NOT NULL,
+                utility_5 REAL,
+                utility_15 REAL,
+                UNIQUE(state_id, configuration_hash, rollout_seed, repeat_index)
+            );
+            CREATE INDEX IF NOT EXISTS continuations_state
+                ON continuation_evaluations(state_id);
+            CREATE TABLE IF NOT EXISTS classic_teacher_labels (
+                state_id TEXT PRIMARY KEY REFERENCES states(state_id),
+                search_regime TEXT NOT NULL,
+                filtering_mode TEXT NOT NULL,
+                locking_mode TEXT NOT NULL,
+                classic_utility REAL NOT NULL,
+                anchor_utility REAL NOT NULL,
+                eligible INTEGER NOT NULL,
+                metadata_json TEXT NOT NULL
+            );
             """
         )
         # SQLite has no portable ``ADD COLUMN IF NOT EXISTS``.  These guarded
@@ -330,3 +359,171 @@ class ResearchStore:
     def mark_state_complete(self, state_id: str) -> None:
         self.connection.execute("UPDATE states SET status='complete' WHERE state_id=?", (state_id,))
         self.connection.commit()
+
+    def add_continuation(self, record: dict[str, Any]) -> bool:
+        configuration_hash = content_hash(record["configuration"])
+        continuation_id = content_hash(
+            [
+                record["state_id"],
+                configuration_hash,
+                record["rollout_seed"],
+                record["repeat_index"],
+            ]
+        )
+        cursor = self.connection.execute(
+            """INSERT OR IGNORE INTO continuation_evaluations(
+                   continuation_id,state_id,configuration_json,configuration_hash,
+                   acquisition_role,varied_groups_json,rollout_seed,repeat_index,
+                   forced_curve_json,continuation_curve_json,failures_json,
+                   provisional_manifest_sha256,utility_5,utility_15
+               ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                continuation_id,
+                record["state_id"],
+                canonical_json(record["configuration"]),
+                configuration_hash,
+                record["acquisition_role"],
+                canonical_json(record.get("varied_groups", [])),
+                int(record["rollout_seed"]),
+                int(record["repeat_index"]),
+                canonical_json(record["forced_curve"]),
+                canonical_json(record["continuation_curve"]),
+                canonical_json(record.get("failures", [])),
+                record["provisional_manifest_sha256"],
+                record.get("utility_5"),
+                record.get("utility_15"),
+            ),
+        )
+        self.connection.commit()
+        return cursor.rowcount == 1
+
+    def has_continuation(
+        self,
+        state_id: str,
+        configuration: dict[str, Any],
+        rollout_seed: int,
+        repeat_index: int,
+    ) -> bool:
+        row = self.connection.execute(
+            """SELECT 1 FROM continuation_evaluations
+               WHERE state_id=? AND configuration_hash=?
+                     AND rollout_seed=? AND repeat_index=?""",
+            (
+                state_id,
+                content_hash(configuration),
+                int(rollout_seed),
+                int(repeat_index),
+            ),
+        ).fetchone()
+        return row is not None
+
+    def continuation_rows(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """SELECT c.*,s.task_id,s.trajectory_lineage,s.checkpoint,
+                      s.context_json,s.history_json,t.family,t.specification_json
+               FROM continuation_evaluations c
+               JOIN states s ON s.state_id=c.state_id
+               JOIN tasks t ON t.task_id=s.task_id
+               ORDER BY c.state_id,c.configuration_hash,c.rollout_seed,c.repeat_index"""
+        ).fetchall()
+        return [
+            {
+                **dict(row),
+                "configuration": json.loads(row["configuration_json"]),
+                "varied_groups": json.loads(row["varied_groups_json"]),
+                "forced_curve": json.loads(row["forced_curve_json"]),
+                "continuation_curve": json.loads(row["continuation_curve_json"]),
+                "failures": json.loads(row["failures_json"]),
+                "context": json.loads(row["context_json"]),
+                "history": json.loads(row["history_json"]),
+                "space": json.loads(row["specification_json"]).get("space", {}),
+            }
+            for row in rows
+        ]
+
+    def set_continuation_utilities(
+        self, continuation_id: str, utility_5: float, utility_15: float
+    ) -> None:
+        self.connection.execute(
+            "UPDATE continuation_evaluations SET utility_5=?,utility_15=? WHERE continuation_id=?",
+            (float(utility_5), float(utility_15), continuation_id),
+        )
+        self.connection.commit()
+
+    def upsert_teacher_label(self, record: dict[str, Any]) -> None:
+        self.connection.execute(
+            """INSERT INTO classic_teacher_labels(
+                   state_id,search_regime,filtering_mode,locking_mode,
+                   classic_utility,anchor_utility,eligible,metadata_json
+               ) VALUES (?,?,?,?,?,?,?,?)
+               ON CONFLICT(state_id) DO UPDATE SET
+                   search_regime=excluded.search_regime,
+                   filtering_mode=excluded.filtering_mode,
+                   locking_mode=excluded.locking_mode,
+                   classic_utility=excluded.classic_utility,
+                   anchor_utility=excluded.anchor_utility,
+                   eligible=excluded.eligible,
+                   metadata_json=excluded.metadata_json""",
+            (
+                record["state_id"],
+                record["search_regime"],
+                record["filtering_mode"],
+                record["locking_mode"],
+                float(record["classic_utility"]),
+                float(record["anchor_utility"]),
+                int(bool(record["eligible"])),
+                canonical_json(record.get("metadata", {})),
+            ),
+        )
+        self.connection.commit()
+
+    def teacher_rows(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """SELECT l.*,s.task_id,s.context_json,s.history_json,
+                      t.family,t.specification_json
+               FROM classic_teacher_labels l
+               JOIN states s ON s.state_id=l.state_id
+               JOIN tasks t ON t.task_id=s.task_id
+               ORDER BY l.state_id"""
+        ).fetchall()
+        return [
+            {
+                **dict(row),
+                "eligible": bool(row["eligible"]),
+                "metadata": json.loads(row["metadata_json"]),
+                "context": json.loads(row["context_json"]),
+                "history": json.loads(row["history_json"]),
+                "space": json.loads(row["specification_json"]).get("space", {}),
+            }
+            for row in rows
+        ]
+
+    def state_records(
+        self,
+        task_ids: set[str] | None = None,
+        acquisition_round: int | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = []
+        parameters: list[Any] = []
+        if acquisition_round is not None:
+            clauses.append("s.acquisition_round=?")
+            parameters.append(int(acquisition_round))
+        query = (
+            "SELECT s.*,t.family,t.specification_json FROM states s "
+            "JOIN tasks t ON t.task_id=s.task_id"
+        )
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY s.state_id"
+        rows = self.connection.execute(query, parameters).fetchall()
+        return [
+            {
+                **dict(row),
+                "history": json.loads(row["history_json"]),
+                "context": json.loads(row["context_json"]),
+                "space": json.loads(row["specification_json"]).get("space", {}),
+                "task_specification": json.loads(row["specification_json"]),
+            }
+            for row in rows
+            if task_ids is None or row["task_id"] in task_ids
+        ]

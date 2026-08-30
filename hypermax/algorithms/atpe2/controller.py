@@ -109,6 +109,8 @@ class ATPE2Controller:
             )
         factorized = bool(getattr(self.ensemble, "is_factorized", False))
         if factorized:
+            augment = getattr(self.ensemble, "augment_context", None)
+            context = augment(context) if augment is not None else context
             selected, decision = self._factorized_action(context, boundary)
             expected_utility = float(decision["expected_utility"])
             risk_adjusted_expected_utility = float(decision["score"])

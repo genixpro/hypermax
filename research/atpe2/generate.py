@@ -426,15 +426,13 @@ def generate(
     if acquisition_round > 0:
         if model_manifest is None:
             raise ValueError("Dataset aggregation requires a fitted model manifest")
-        manifest = json.loads(model_manifest.read_text())
-        training_task_ids = set(manifest.get("task_splits", {}).get("train", []))
         with ResearchStore(database) as store:
             tasks = [
                 SyntheticTask.from_specification(specification)
-                for specification in store.task_specifications(training_task_ids)
+                for specification in store.task_specifications()
             ]
-        if not tasks or {task.task_id for task in tasks} != training_task_ids:
-            raise ValueError("Dataset aggregation could not resolve every training task")
+        if not tasks:
+            raise ValueError("Structured acquisition could not resolve round-zero tasks")
     else:
         tasks = (
             factorized_training_tasks(seed, task_count)

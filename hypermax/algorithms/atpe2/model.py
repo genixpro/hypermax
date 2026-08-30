@@ -28,10 +28,12 @@ class ATPE2ModelEnsemble:
         manifest: dict[str, Any],
         models: list[Any],
         support: dict[str, Any] | None = None,
+        teacher_models: dict[str, Any] | None = None,
     ):
         self.manifest = manifest
         self.models = models
         self.support = support
+        self.teacher_models = teacher_models or {}
 
     @staticmethod
     def _checked_payload(directory: Any, artifact: dict[str, Any]) -> bytes:
@@ -42,7 +44,9 @@ class ATPE2ModelEnsemble:
         return payload
 
     @classmethod
-    def _load_components(cls, directory: Any, manifest: dict[str, Any]) -> tuple[list[Any], dict[str, Any] | None]:
+    def _load_components(
+        cls, directory: Any, manifest: dict[str, Any]
+    ) -> tuple[list[Any], dict[str, Any] | None, dict[str, Any]]:
         if manifest.get("policy_type") != "factorized":
             models = [
                 lightgbm.Booster(
@@ -50,7 +54,7 @@ class ATPE2ModelEnsemble:
                 )
                 for artifact in manifest.get("models", [])
             ]
-            return models, None
+            return models, None, {}
 
         members = []
         for member in manifest.get("members", []):
@@ -79,21 +83,29 @@ class ATPE2ModelEnsemble:
         support = None
         if support_artifact:
             support = json.loads(cls._checked_payload(directory, support_artifact).decode("utf-8"))
-        return members, support
+        teacher_models = {
+            name: lightgbm.Booster(
+                model_str=cls._checked_payload(directory, artifact).decode("utf-8")
+            )
+            for name, artifact in manifest.get("teacher_artifacts", {}).items()
+        }
+        return members, support, teacher_models
 
     @classmethod
     def load_default(cls) -> "ATPE2ModelEnsemble":
         directory = files("hypermax").joinpath("atpe2_models")
         manifest = json.loads(directory.joinpath("manifest.json").read_text(encoding="utf-8"))
-        models, support = cls._load_components(directory, manifest)
-        return cls(manifest, models, support)
+        models, support, teacher_models = cls._load_components(directory, manifest)
+        return cls(manifest, models, support, teacher_models)
 
     @classmethod
     def load(cls, manifest_path: str | Path) -> "ATPE2ModelEnsemble":
         manifest_path = Path(manifest_path)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        models, support = cls._load_components(manifest_path.parent, manifest)
-        return cls(manifest, models, support)
+        models, support, teacher_models = cls._load_components(
+            manifest_path.parent, manifest
+        )
+        return cls(manifest, models, support, teacher_models)
 
     @property
     def is_factorized(self) -> bool:
@@ -197,6 +209,10 @@ class ATPE2ModelEnsemble:
                     for member in self.models
                 )
                 and self.support is not None
+                and (
+                    not self.manifest.get("architecture", {}).get("teacher")
+                    or set(self.teacher_models) == {"search", "filtering", "locking"}
+                )
                 and int(self.manifest.get("runtime", {}).get("group_proposals", 0)) == 17
                 and int(self.manifest.get("runtime", {}).get("beam_width", 0)) <= 64
             )
@@ -214,6 +230,32 @@ class ATPE2ModelEnsemble:
         return lower.shape == context.shape and upper.shape == context.shape and bool(
             np.all(context >= lower) and np.all(context <= upper)
         )
+
+    def augment_context(self, context: np.ndarray) -> np.ndarray:
+        """Append classic-mode probabilities without executing classic ATPE."""
+        if not self.teacher_models:
+            return np.asarray(context, dtype=float)
+        features = []
+        classes = self.manifest.get("teacher_classes", {})
+        for name in ("search", "filtering", "locking"):
+            model = self.teacher_models[name]
+            prediction = np.asarray(
+                model.predict(np.asarray(context, dtype=float)[None, :], num_threads=1)
+            )
+            if prediction.ndim == 1:
+                prediction = prediction[None, :]
+            values = prediction[0]
+            expected = len(classes.get(name, []))
+            if expected == 2 and len(values) == 1:
+                probability = float(values[0])
+                values = np.asarray([1.0 - probability, probability])
+            if len(values) != expected:
+                raise ValueError(f"ATPE2 teacher {name} probability width mismatch")
+            features.extend(float(value) for value in values)
+        output = np.concatenate((np.asarray(context, dtype=float), np.asarray(features)))
+        if not np.all(np.isfinite(output)):
+            raise FloatingPointError("ATPE2 teacher features are non-finite")
+        return output
 
     def predict(self, matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         if not self.research_ready:

@@ -205,3 +205,49 @@ The checked-in runtime manifest is the guarded, checksummed frozen ensemble
 produced after held-out validation, pruning, and the single dataset-aggregation
 round passed Gate 2. Re-running `freeze.py` will still refuse publication unless
 the candidate, pruning evidence, and Gate 2 report have exact matching hashes.
+
+## Factorized eight-knob cycle
+
+The factorized cycle starts from a new database and keeps the public eight-knob
+action intact. Round zero uses the exact 192-task family mix and can be split
+deterministically across Linux hosts. Merge is idempotent, so interrupted shards
+may be resumed and merged again:
+
+```bash
+python -m research.atpe2.generate round0-shard.sqlite --seed 20260830 --checkpoints 20 50 100 --task-count 192 --task-shard-index 0 --task-shard-count 3 --workers 4
+python -m research.atpe2.merge_databases factorized.sqlite round0-shard-0.sqlite round0-shard-1.sqlite round0-shard-2.sqlite
+```
+
+Generate structured round one from the merged database with the provisional
+policy manifest. Every state has exactly 65 unique actions with acquisition-role
+and varied-group metadata in its lineage:
+
+```bash
+python -m research.atpe2.generate factorized.sqlite --seed 20260830 --checkpoints 20 50 100 --acquisition-round 1 --model-manifest provisional/manifest.json --workers 4
+```
+
+The declared base grid is bounded and shardable. It contains the structured
+joint control plus factorized no-residual, residual, downside, support, and
+context-v4 branches. Failed component gates are removed before fresh policy
+selection; at most twelve manifests and six behavioral candidates survive:
+
+```bash
+python -m research.atpe2.fit_grid factorized.sqlite fits --seed 20260830 --shard-index 0 --shard-count 3
+python -m research.atpe2.select_factorized selection.json fits/*/manifest.json
+```
+
+Continuation and classic-teacher collection are deliberately unavailable until
+a factorized manifest reports passing component gates. Continuation uses 24
+training-only tasks at checkpoints 25 and 50 and stores paired five- and
+fifteen-step targets from the same rollouts. Teacher labels store classic modes
+only for training; runtime loads small probability predictors and never imports
+or executes classic ATPE:
+
+```bash
+python -m research.atpe2.continuation factorized.sqlite winner/manifest.json --seed 20260830 --workers 4
+python -m research.atpe2.teacher factorized.sqlite winner/manifest.json --seed 20260830
+python -m research.atpe2.fit_grid factorized.sqlite later-fits --seed 20260830 --branches multi_horizon teacher multi_horizon_teacher
+```
+
+This cycle stops after the standard pre-Gate-2 assessment. Do not freeze,
+publish, execute Gate 2, or start external Gate 3 without a new decision.
