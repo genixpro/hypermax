@@ -23,6 +23,7 @@ from research.atpe2.factorized import (
     robust_support_artifact,
 )
 from research.atpe2.factorized_screen import assess_five_quick_screens
+from research.atpe2.merge_databases import merge_database_shards
 from research.atpe2.train import grouped_split
 from research.atpe2.train_factorized import train_factorized
 from research.atpe2.gates import (
@@ -35,7 +36,7 @@ from research.atpe2.evidence import (
     boundary_diagnostics,
     structurally_inactive_locking_knobs,
 )
-from research.atpe2.synthetic import pilot_tasks
+from research.atpe2.synthetic import factorized_training_tasks, pilot_tasks
 from research.atpe2.configspace_adapter import ConfigSpaceAdapter
 from research.atpe2.validate import _clone_ensemble
 from research.atpe2 import external as external_module
@@ -133,6 +134,44 @@ def test_research_store_migrates_v1_database_without_losing_rows(tmp_path):
         }
         assert "acquisition_metadata_json" in state_columns
         assert {"acquisition_role", "varied_groups_json"}.issubset(evaluation_columns)
+
+
+def test_disjoint_database_shards_merge_resumably(tmp_path):
+    sources = []
+    for index in range(2):
+        source = tmp_path / f"shard-{index}.sqlite"
+        sources.append(source)
+        with ResearchStore(source) as store:
+            task_id = f"task-{index}"
+            store.upsert_task(task_id, "smooth", {"space": {}}, "generator")
+            state_id = store.upsert_state(
+                task_id, "tpe", f"lineage-{index}", 20, [], {}, 0
+            )
+            store.add_evaluation(
+                {
+                    "state_id": state_id,
+                    "task_id": task_id,
+                    "generator_version": "generator",
+                    "history_lineage": f"lineage-{index}",
+                    "configuration": {"gamma": 0.25},
+                    "rollout_seed": index,
+                    "repeat_index": 0,
+                    "incumbent_curve": [1.0] * 5,
+                    "failures": [],
+                    "timing": {},
+                    "dependency_versions": {},
+                    "utility": 0.5,
+                }
+            )
+            store.mark_state_complete(state_id)
+    destination = tmp_path / "authoritative.sqlite"
+    first = merge_database_shards(destination, sources)
+    second = merge_database_shards(destination, sources)
+
+    assert first["evaluations_inserted"] == 2
+    assert second["evaluations_inserted"] == 0
+    with ResearchStore(destination) as store:
+        assert len(store.training_rows()) == 2
 
 
 def test_scale_free_label_ranks_each_paired_step():
@@ -812,6 +851,18 @@ def test_synthetic_suite_contains_zero_plateau_and_irrelevant_dimensions():
     params["irrelevant"] = 1.0
     second = smooth.evaluate(params, 10, 0)["loss"]
     assert first == second
+
+
+def test_factorized_training_task_mix_is_192_with_40_percent_hierarchical():
+    tasks = factorized_training_tasks(17)
+    counts = {
+        family: sum(task.family == family for task in tasks)
+        for family in {task.family for task in tasks}
+    }
+
+    assert len(tasks) == 192
+    assert counts["hierarchical"] == 77
+    assert set(counts.values()) == {23, 77}
 
 
 def test_configspace_adapter_preserves_nested_conditional_activity():

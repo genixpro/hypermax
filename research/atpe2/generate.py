@@ -16,6 +16,7 @@ import math
 import multiprocessing as mp
 from pathlib import Path
 import platform
+import sqlite3
 import time
 from typing import Any
 
@@ -415,9 +416,13 @@ def generate(
     instances_per_family: int = 4,
     workers: int = 1,
     task_count: int | None = 192,
+    task_shard_index: int = 0,
+    task_shard_count: int = 1,
 ) -> None:
     if workers < 1:
         raise ValueError("workers must be positive")
+    if task_shard_count < 1 or not 0 <= task_shard_index < task_shard_count:
+        raise ValueError("task shard must satisfy 0 <= index < count")
     if acquisition_round > 0:
         if model_manifest is None:
             raise ValueError("Dataset aggregation requires a fitted model manifest")
@@ -437,6 +442,12 @@ def generate(
             else synthetic_tasks(seed, instances_per_family)
         )
     tasks = tasks[:max_tasks]
+    total_task_count = len(tasks)
+    tasks = [
+        task
+        for index, task in enumerate(sorted(tasks, key=lambda task: task.task_id))
+        if index % task_shard_count == task_shard_index
+    ]
     with ResearchStore(database) as store:
         schema = (action_schema or {}).get("backward_knockout", action_schema or {})
         fixed_constants = schema.get("fixed_constants", {})
@@ -450,6 +461,9 @@ def generate(
                 "checkpoints": list(checkpoints),
                 "instances_per_family": instances_per_family,
                 "task_count": len(tasks),
+                "global_task_count": total_task_count,
+                "task_shard_index": task_shard_index,
+                "task_shard_count": task_shard_count,
                 "task_family_counts": {
                     family: sum(task.family == family for task in tasks)
                     for family in sorted({task.family for task in tasks})
@@ -512,6 +526,13 @@ def generate(
     else:
         with mp.get_context("spawn").Pool(processes=workers) as pool:
             pool.starmap(_generate_job, jobs)
+    # A completed shard must be a self-contained file before it is copied to
+    # the authoritative host. All worker connections have closed at this point.
+    checkpoint_connection = sqlite3.connect(database, timeout=120)
+    try:
+        checkpoint_connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+    finally:
+        checkpoint_connection.close()
 
 
 def main(argv=None):
@@ -531,6 +552,8 @@ def main(argv=None):
         help="factorized protocol task count; use 0 for legacy equal-per-family generation",
     )
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--task-shard-index", type=int, default=0)
+    parser.add_argument("--task-shard-count", type=int, default=1)
     args = parser.parse_args(argv)
     if args.acquisition_round > 0 and args.model_manifest is None:
         parser.error("--model-manifest is required for dataset aggregation rounds")
@@ -546,6 +569,8 @@ def main(argv=None):
         args.instances_per_family,
         args.workers,
         None if args.task_count == 0 else args.task_count,
+        args.task_shard_index,
+        args.task_shard_count,
     )
 
 
