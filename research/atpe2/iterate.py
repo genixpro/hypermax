@@ -13,6 +13,8 @@ import hashlib
 import json
 import multiprocessing as mp
 from pathlib import Path
+import platform
+import sys
 import time
 from typing import Any
 
@@ -39,6 +41,35 @@ ITERATION_ROLLOUT_SEEDS = 2
 ITERATION_INSTANCES_PER_FAMILY = 2
 ITERATION_STEPS = 10
 PERFORMANCE_FAMILIES = {"smooth", "rugged", "interaction", "hierarchical"}
+COMPARATOR_OPTIMIZERS = ("random", "hyperopt_tpe", "legacy_atpe")
+COMPARATOR_CACHE_SCHEMA_VERSION = "atpe2-iteration-comparators-v1"
+
+
+def environment_identity() -> dict[str, str]:
+    return {
+        "system": platform.system(),
+        "release": platform.release(),
+        "machine": platform.machine(),
+        "python": sys.version,
+        "numpy": np.__version__,
+    }
+
+
+def validated_comparator_rows(cache: dict[str, Any], seed: int) -> list[dict[str, Any]]:
+    expected = {
+        "schema_version": COMPARATOR_CACHE_SCHEMA_VERSION,
+        "iteration_schema_version": ITERATION_SCHEMA_VERSION,
+        "seed": seed,
+        "optimizers": list(COMPARATOR_OPTIMIZERS),
+        "environment": environment_identity(),
+    }
+    for key, value in expected.items():
+        if cache.get(key) != value:
+            raise ValueError(f"Comparator cache mismatch for {key}")
+    rows = cache.get("rows")
+    if not isinstance(rows, list):
+        raise ValueError("Comparator cache rows must be a list")
+    return rows
 
 
 def _history_loss_scale(history: list[dict[str, Any]]) -> float:
@@ -78,12 +109,17 @@ def _task_rows(
     task,
     task_index: int,
     seed: int,
-    manifest_path: Path,
+    manifest_path: Path | None,
+    optimizer_names: tuple[str, ...] = ITERATION_OPTIMIZERS,
 ) -> list[dict[str, Any]]:
-    ensemble = ATPE2ModelEnsemble.load(manifest_path)
-    if not ensemble.research_ready:
-        raise ValueError("Iteration benchmark requires a fitted ATPE2 ensemble")
-    ensembles = {"atpe2": ensemble}
+    ensembles = {}
+    if "atpe2" in optimizer_names:
+        if manifest_path is None:
+            raise ValueError("Candidate iteration rows require an ATPE2 manifest")
+        ensemble = ATPE2ModelEnsemble.load(manifest_path)
+        if not ensemble.research_ready:
+            raise ValueError("Iteration benchmark requires a fitted ATPE2 ensemble")
+        ensembles["atpe2"] = ensemble
     rows: list[dict[str, Any]] = []
     for method_index, method in enumerate(ITERATION_TRAJECTORIES):
         history_seed = seed + task_index * 1_000_000 + method_index * 10_000
@@ -102,7 +138,7 @@ def _task_rows(
                     + rollout_index * 101
                 )
                 paired = []
-                for name in ITERATION_OPTIMIZERS:
+                for name in optimizer_names:
                     optimizer = _make_optimizer(name, rollout_seed, ensembles)
                     result = _run_five_steps(
                         task,
@@ -328,6 +364,7 @@ def run_iteration(
     output: Path,
     seed: int,
     workers: int = 6,
+    comparator_cache: Path | None = None,
 ) -> dict[str, Any]:
     if workers < 1:
         raise ValueError("workers must be positive")
@@ -336,8 +373,9 @@ def run_iteration(
         seed + 70_000_000,
         instances_per_family=ITERATION_INSTANCES_PER_FAMILY,
     )
+    optimizer_names = ("atpe2",) if comparator_cache else ITERATION_OPTIMIZERS
     jobs = [
-        (task, task_index, seed, manifest_path)
+        (task, task_index, seed, manifest_path, optimizer_names)
         for task_index, task in enumerate(tasks)
     ]
     if workers == 1:
@@ -346,6 +384,29 @@ def run_iteration(
         with mp.get_context("spawn").Pool(min(workers, len(jobs))) as pool:
             blocks = pool.starmap(_task_rows, jobs)
     rows = [row for block in blocks for row in block]
+    comparator_identity = None
+    if comparator_cache:
+        cache = json.loads(comparator_cache.read_text())
+        rows.extend(validated_comparator_rows(cache, seed))
+        paired: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            key = (
+                row["task"],
+                row["trajectory_lineage"],
+                row["checkpoint"],
+                row["seed"],
+            )
+            paired[key].append(row)
+        if not paired or any(
+            {row["optimizer"] for row in values} != set(ITERATION_OPTIMIZERS)
+            for values in paired.values()
+        ):
+            raise ValueError("Comparator cache does not pair every candidate block")
+        for values in paired.values():
+            _rank_utilities(values)
+            for row in values:
+                row["rank_utility_auc"] = row["five_step_utility"]
+        comparator_identity = hashlib.sha256(comparator_cache.read_bytes()).hexdigest()
     report = {
         "schema_version": ITERATION_SCHEMA_VERSION,
         "evidence_eligible": False,
@@ -357,6 +418,7 @@ def run_iteration(
         "model_manifest_sha256": hashlib.sha256(
             manifest_path.read_bytes()
         ).hexdigest(),
+        "comparator_cache_sha256": comparator_identity,
         "protocol": {
             "task_families": sorted({task.family for task in tasks}),
             "instances_per_family": ITERATION_INSTANCES_PER_FAMILY,
@@ -384,8 +446,15 @@ def main(argv=None):
     parser.add_argument("output", type=Path)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--comparator-cache", type=Path)
     args = parser.parse_args(argv)
-    report = run_iteration(args.manifest, args.output, args.seed, args.workers)
+    report = run_iteration(
+        args.manifest,
+        args.output,
+        args.seed,
+        args.workers,
+        args.comparator_cache,
+    )
     print(
         json.dumps(
             {

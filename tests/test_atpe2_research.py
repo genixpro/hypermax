@@ -23,6 +23,13 @@ from research.atpe2.factorized import (
     robust_support_artifact,
 )
 from research.atpe2.factorized_screen import assess_five_quick_screens
+from research.atpe2.iterate import (
+    COMPARATOR_CACHE_SCHEMA_VERSION,
+    COMPARATOR_OPTIMIZERS,
+    ITERATION_SCHEMA_VERSION,
+    environment_identity,
+    validated_comparator_rows,
+)
 from research.atpe2.merge_databases import merge_database_shards
 from research.atpe2.select_factorized import (
     select_behavioral_variants,
@@ -574,6 +581,21 @@ def test_five_quick_assessment_enforces_seed_family_classic_and_overhead_gates()
     assert assessment["passed"]
     assert assessment["classic_gap"]["deficit_closure_fraction"] >= 0.5
     assert assessment["controller_overhead_ratio"] == pytest.approx(1.2)
+
+
+def test_comparator_cache_is_seeded_and_environment_locked():
+    cache = {
+        "schema_version": COMPARATOR_CACHE_SCHEMA_VERSION,
+        "iteration_schema_version": ITERATION_SCHEMA_VERSION,
+        "seed": 7,
+        "optimizers": list(COMPARATOR_OPTIMIZERS),
+        "environment": environment_identity(),
+        "rows": [{"optimizer": "hyperopt_tpe"}],
+    }
+
+    assert validated_comparator_rows(cache, 7) == cache["rows"]
+    with pytest.raises(ValueError, match="seed"):
+        validated_comparator_rows(cache, 19)
 
 
 def test_variant_pruning_rejects_failed_gates_and_caps_both_stages(tmp_path):

@@ -236,6 +236,15 @@ python -m research.atpe2.fit_grid factorized.sqlite fits --seed 20260830 --shard
 python -m research.atpe2.select_factorized selection.json fits/*/manifest.json
 ```
 
+Generate each seed's comparator cache once on the Linux screen host, then pass
+that immutable cache to every candidate. With a cache, `iterate` computes only
+ATPE2 rows and validates the protocol, seed, and environment before pairing:
+
+```bash
+python -m research.atpe2.cache_comparators comparators-7.json --seed 7 --workers 6
+python -m research.atpe2.iterate candidate/manifest.json candidate-7.json --seed 7 --workers 6 --comparator-cache comparators-7.json
+```
+
 Continuation and classic-teacher collection are deliberately unavailable until
 a factorized manifest reports passing component gates. Continuation uses 24
 training-only tasks at checkpoints 25 and 50 and stores paired five- and
