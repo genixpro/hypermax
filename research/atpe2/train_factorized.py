@@ -722,7 +722,7 @@ def train_factorized(
             "retained_per_group": 6,
             "beam_width": 64,
             "full_action_exploration_candidates": 1,
-            "max_supported_distance": 1.0,
+            "max_supported_distance": 0.95,
             "deterministic": True,
             "fallback_to_tpe": False,
         },

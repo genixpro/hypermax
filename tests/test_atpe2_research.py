@@ -383,12 +383,23 @@ def test_factorized_miniature_database_fit_runtime_and_reload(tmp_path):
         trees=8,
         leaf_index=0,
     )
+    reproduced = train_factorized(
+        database,
+        tmp_path / "model-reproduced",
+        seed=5,
+        branch_name="context_v4",
+        trees=8,
+        leaf_index=0,
+    )
     loaded = ATPE2ModelEnsemble.load(output / "manifest.json")
     controller = ATPE2Controller(9, ensemble=loaded)
     action = controller.action_for(space, [], [])
 
     assert manifest["schema_version"] == "atpe2-factorized-manifest-v1"
     assert len(manifest["members"]) == 8
+    assert reproduced["model_artifact_sha256"] == manifest["model_artifact_sha256"]
+    assert reproduced["score_composition"] == manifest["score_composition"]
+    assert reproduced["support_artifact"]["sha256"] == manifest["support_artifact"]["sha256"]
     assert loaded.research_ready
     assert isinstance(action, ATPE2Action)
     assert controller.last_record["decision_mode"] == "adaptive_model"
