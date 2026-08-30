@@ -144,6 +144,15 @@ def _fit_regressor(
     return model
 
 
+def _relative_fit_weights(values: np.ndarray) -> np.ndarray:
+    """Preserve relative acquisition mass while giving LightGBM unit mean mass."""
+    values = np.asarray(values, dtype=float)
+    total = float(np.sum(values))
+    if not len(values) or not np.all(np.isfinite(values)) or total <= 0.0:
+        raise ValueError("Model-fit weights must be finite and have positive mass")
+    return values * (len(values) / total)
+
+
 def _fit_teacher_predictors(
     teacher_rows: list[dict[str, Any]],
     extractor: Any,
@@ -250,7 +259,7 @@ def _ranker_dataset(
     return (
         np.asarray(matrix, dtype=float),
         np.asarray(labels, dtype=int),
-        np.asarray(weights, dtype=float),
+        _relative_fit_weights(np.asarray(weights, dtype=float)),
         query,
     )
 
@@ -413,6 +422,7 @@ def component_gate_report(
     catastrophic_prediction: np.ndarray,
     support: np.ndarray,
     branch: dict[str, Any] | None = None,
+    group_rankers_non_degenerate: bool = True,
 ) -> dict[str, Any]:
     branch = branch or {"residual": True, "downside": True, "support": True}
     position = {index: offset for offset, index in enumerate(validation_indices)}
@@ -495,6 +505,7 @@ def component_gate_report(
         for family, values in family_isolated_delta.items()
     }
     checks = {
+        "group_rankers_have_learned_splits": group_rankers_non_degenerate,
         "directional_accuracy_overall_at_least_0_60": overall_directional >= 0.60,
         "directional_accuracy_each_group_at_least_0_55": all(
             value >= 0.55 for value in directional_accuracy.values()
@@ -678,7 +689,12 @@ def train_factorized(
             target = np.asarray([rows[index]["residual_target"] for index in selected])
             weights = np.asarray([rows[index]["round_weight"] for index in selected])
             residual_model = _fit_regressor(
-                matrix, target, weights, seed + member_index * 100 + 10, trees, leaves
+                matrix,
+                target,
+                _relative_fit_weights(weights),
+                seed + member_index * 100 + 10,
+                trees,
+                leaves,
             )
             path = output / f"member-{member_index}-residual.txt"
             member_artifacts["residual"] = _save_model(residual_model, path)
@@ -702,7 +718,7 @@ def train_factorized(
             model = _fit_regressor(
                 matrix,
                 target,
-                weights,
+                _relative_fit_weights(weights),
                 seed + member_index * 100 + 20 + target_index,
                 trees,
                 leaves,
@@ -803,6 +819,11 @@ def train_factorized(
         downside_heads["catastrophic"],
         support,
         branch,
+        all(
+            int(np.sum(member["groups"][group].booster_.feature_importance())) > 0
+            for member in fitted_members
+            for group in ACTION_GROUPS
+        ),
     )
 
     feature_schema_hash = hashlib.sha256(

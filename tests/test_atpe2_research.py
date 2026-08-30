@@ -37,7 +37,7 @@ from research.atpe2.select_factorized import (
 )
 from research.atpe2.fit_grid import BASE_BRANCHES, declared_jobs
 from research.atpe2.train import grouped_split
-from research.atpe2.train_factorized import train_factorized
+from research.atpe2.train_factorized import _relative_fit_weights, train_factorized
 from research.atpe2.gates import (
     configurations_equivalent,
     gate2_report,
@@ -629,6 +629,14 @@ def test_declared_grid_is_bounded_and_shardable_without_duplicates():
     assert len(jobs) == 3 + 5 * 3 * 9
     assert len({json.dumps(job, sort_keys=True) for job in jobs}) == len(jobs)
     assert {job["trees"] for job in jobs} == {8, 12, 16}
+
+
+def test_lightgbm_fit_weights_preserve_ratios_with_unit_mean_mass():
+    raw = np.asarray([0.9 / 90, 0.9 / 90, 0.1 / 10], dtype=float)
+    scaled = _relative_fit_weights(raw)
+
+    assert np.mean(scaled) == pytest.approx(1.0)
+    assert scaled[0] / scaled[2] == pytest.approx(raw[0] / raw[2])
 
 
 def test_third_repeat_selection_can_be_recomputed_from_paired_rows_only():
