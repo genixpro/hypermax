@@ -30,6 +30,17 @@ class Hyperparameter:
             else:
                 data = self.config['oneOf']
 
+            # ATPE2 may lock a conditional selector.  Returning the selected
+            # branch directly keeps descendants structurally compatible while
+            # preserving the same ``$index`` representation returned by hp.choice.
+            if self.name in lockedValues:
+                selected = int(lockedValues[self.name])
+                if selected < 0 or selected >= len(data):
+                    raise ValueError(f"Invalid locked branch {selected} for {self.name}")
+                space = Hyperparameter(data[selected], self, name + "." + str(selected)).createHyperoptSpace(lockedValues)
+                space["$index"] = selected
+                return space
+
             subSpaces = [Hyperparameter(param, self, name + "." + str(index)).createHyperoptSpace(lockedValues) for index, param in enumerate(data)]
             for index, space in enumerate(subSpaces):
                 space["$index"] = index

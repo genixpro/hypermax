@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 import lightgbm
 import scipy.stats
 import math
+import warnings
 from pprint import pprint
 import copy
 import hypermax.file_utils
@@ -314,7 +315,10 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                 # If we are predicting a class, we get separate feature contributions for each class. Take the average
                 if atpeParameter in self.atpeParameterValues:
                     featureContributions = numpy.mean(
-                        numpy.reshape(featureContributions, newshape=(len(allFeatureKeysForATPEParamModel) + 1, len(self.atpeParameterValues[atpeParameter]))), axis=1)
+                        # NumPy 2 renamed the public keyword from ``newshape``
+                        # to ``shape``.  A positional argument works on both
+                        # old and new releases without changing the result.
+                        numpy.reshape(featureContributions, (len(allFeatureKeysForATPEParamModel) + 1, len(self.atpeParameterValues[atpeParameter]))), axis=1)
 
                 contributions = [(self.atpeModelFeatureKeys[index], float(featureContributions[index])) for index in range(len(self.atpeModelFeatureKeys))]
                 contributions = sorted(contributions, key=lambda r: -r[1])
@@ -389,23 +393,28 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
             if len(set(result['loss'] for result in results)) < 5:
                 return parameters, [], [0.5] * len(parameters)  # Put all parameters as primary
 
-            numberParameters = [parameter for parameter in parameters if parameter.config['type'] == 'number']
-            otherParameters = [parameter for parameter in parameters if parameter.config['type'] != 'number']
+            numberParameters = [parameter for parameter in parameters if parameter.config.get('type') == 'number']
+            otherParameters = [parameter for parameter in parameters if parameter.config.get('type') != 'number']
 
             totalWeight = 0
             correlations = {}
             for parameter in numberParameters:
-                if len(set(result[parameter.name] for result in results if result[parameter.name] is not None)) < 2:
+                if len(set(result.get(parameter.name) for result in results if result.get(parameter.name) is not None)) < 2:
                     correlations[parameter.name] = 0
                 else:
                     values = []
                     valueLosses = []
                     for result in results:
-                        if result[parameter.name] is not None and result['loss'] is not None:
-                            values.append(result[parameter.name])
+                        if result.get(parameter.name) is not None and result['loss'] is not None:
+                            values.append(result.get(parameter.name))
                             valueLosses.append(result['loss'])
 
-                    correlation = math.pow(abs(scipy.stats.spearmanr(values, valueLosses)[0]), atpeParams['secondaryCorrelationExponent'])
+                    rawCorrelation = abs(scipy.stats.spearmanr(values, valueLosses)[0])
+                    correlation = (
+                        math.pow(rawCorrelation, atpeParams['secondaryCorrelationExponent'])
+                        if math.isfinite(rawCorrelation)
+                        else 0
+                    )
                     correlations[parameter.name] = correlation
                     totalWeight += correlation
 
@@ -463,8 +472,8 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                         self.lastLockedParameters.append(secondary.name)
                         if atpeParams['secondaryLockingMode'] == 'top':
                             lockResult = random.choice(topResults)
-                            if lockResult[secondary.name] is not None and lockResult[secondary.name] != "":
-                                lockedValues[secondary.name] = lockResult[secondary.name]
+                            if lockResult.get(secondary.name) is not None and lockResult.get(secondary.name) != "":
+                                lockedValues[secondary.name] = lockResult.get(secondary.name)
                         elif atpeParams['secondaryLockingMode'] == 'random':
                             lockedValues[secondary.name] = self.chooseRandomValueForParameter(secondary)
 
@@ -474,8 +483,8 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
                         self.lastLockedParameters.append(secondary.name)
                         if atpeParams['secondaryLockingMode'] == 'top':
                             lockResult = random.choice(topResults)
-                            if lockResult[secondary.name] is not None and lockResult[secondary.name] != "":
-                                lockedValues[secondary.name] = lockResult[secondary.name]
+                            if lockResult.get(secondary.name) is not None and lockResult.get(secondary.name) != "":
+                                lockedValues[secondary.name] = lockResult.get(secondary.name)
                         elif atpeParams['secondaryLockingMode'] == 'random':
                             lockedValues[secondary.name] = self.chooseRandomValueForParameter(secondary)
 
@@ -534,7 +543,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
 
             if 'rounding' in parameter.config:
                 value = round(value / parameter.config['rounding']) * parameter.config['rounding']
-        elif parameter.get('mode', 'uniform') == 'normal':
+        elif parameter.config.get('mode', 'uniform') == 'normal':
             meanVal = parameter.config['mean']
             stddevVal = parameter.config['stddev']
 
@@ -549,7 +558,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
 
             if 'rounding' in parameter.config:
                 value = round(value / parameter.config['rounding']) * parameter.config['rounding']
-        elif parameter.get('mode', 'uniform') == 'randint':
+        elif parameter.config.get('mode', 'uniform') == 'randint':
             max = parameter.config['max']
             value = random.randint(0, max-1)
 
@@ -565,7 +574,10 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
         percentile75Loss = 0
         statistics = {}
 
-        numpy.warnings.filterwarnings('ignore')
+        # NumPy 2 removed the undocumented ``numpy.warnings`` alias.  Keep the
+        # historical warning-filtering behavior while using Python's public
+        # warnings module so the legacy optimizer remains runnable.
+        warnings.filterwarnings('ignore')
 
         if len(set(losses)) > 1:
             bestLoss = numpy.percentile(losses, 0)
@@ -605,13 +617,16 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
             statistics['loss_best_percentile75_ratio'] = bestLoss / percentile75Loss
 
         def getValue(result, parameter):
-            return result[parameter.name]
+            # Conditional and schema-evolution rows legitimately omit inactive
+            # parameters.  Treat those as missing instead of indexing through
+            # an absent key.
+            return result.get(parameter.name)
 
         # Now we compute correlations between each parameter and the loss
         parameters = Hyperparameter(hyperparameterSpace).getFlatParameters()
         correlations = []
         for parameter in parameters:
-            if parameter.config['type'] == 'number':
+            if parameter.config.get('type') == 'number':
                 if len(set(getValue(result, parameter) for result in results if (getValue(result, parameter) is not None and result['loss'] is not None))) < 2:
                     correlations.append(0)
                 else:
@@ -630,7 +645,7 @@ class ATPEOptimizer(OptimizationAlgorithmBase):
 
         correlations = numpy.array(correlations)
 
-        if len(set(correlations)) == 1:
+        if len(set(correlations)) <= 1:
             statistics['correlation_skew'] = 0
             statistics['correlation_kurtosis'] = 0
             statistics['correlation_stddev_median_ratio'] = 0

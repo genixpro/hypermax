@@ -7,11 +7,19 @@ import numpy.random
 from hypermax.hyperparameter import Hyperparameter
 
 class RandomSearchOptimizer(OptimizationAlgorithmBase):
+    def __init__(self, seed=None):
+        self._rng = numpy.random.default_rng(seed) if seed is not None else None
+
+    def _next_seed(self):
+        if self._rng is None:
+            return random.randint(1, 2 ** 32 - 1)
+        return int(self._rng.integers(1, 2 ** 32))
+
     def recommendNextParameters(self, hyperparameterSpace, results, currentTrials, lockedValues=None):
         if lockedValues is None:
             lockedValues = {}
 
-        rstate = numpy.random.default_rng(seed=random.randint(1, 2 ** 32 - 1))
+        rstate = numpy.random.default_rng(seed=self._next_seed())
 
         trials = self.convertResultsToTrials(hyperparameterSpace, results)
 

@@ -8,10 +8,6 @@ from sklearn.covariance import LedoitWolf
 from sklearn.linear_model import LinearRegression
 import numpy
 from hypermax.utils import roundPrecision
-import matplotlib
-import matplotlib.cm
-import matplotlib.style as mplstyle
-import matplotlib.pyplot as plt
 from pprint import pprint
 import concurrent.futures
 import traceback
@@ -21,9 +17,30 @@ import scipy.optimize
 import random
 import json
 import atexit
-import matplotlib.ticker as mticker
 import traceback
 import copy
+
+
+matplotlib = None
+plt = None
+mticker = None
+
+
+def loadMatplotlib():
+    """Load plotting only when graphs are actually requested.
+
+    Headless and graph-disabled searches should not pay Matplotlib's font-cache
+    startup cost (or require a writable Matplotlib configuration directory).
+    """
+    global matplotlib, plt, mticker
+    if matplotlib is None:
+        import matplotlib as matplotlib_module
+        import matplotlib.pyplot as pyplot_module
+        import matplotlib.ticker as ticker_module
+
+        matplotlib = matplotlib_module
+        plt = pyplot_module
+        mticker = ticker_module
 
 
 def handleChartException(function):
@@ -38,7 +55,8 @@ def handleChartException(function):
         try:
             return function(*args, **kwargs)
         except Exception as e:
-            plt.close('all')
+            if plt is not None:
+                plt.close('all')
             # traceback.print_exc()
             # raise # reraise the exception and allow it to bubble so developers can catch why the charts aren't being generated.
 
@@ -78,6 +96,8 @@ class ResultsAnalyzer:
         self.twoParameterLossAxes = None
 
     def __del__(self):
+        if plt is None:
+            return
         if self.singleParameterLossFigure:
             plt.close(self.singleParameterLossFigure)
         elif self.twoParameterLossFigure:
@@ -241,6 +261,11 @@ class ResultsAnalyzer:
             trials = list(sorted(trials, key=lambda trial: trial['worker']))
             json.dump(trials, paramsFile, indent=4, sort_keys=True)
 
+        controller = getattr(getattr(optimizer, "atpeOptimizer", None), "controller", None)
+        if controller is not None:
+            with open(os.path.join(directory, "atpe2_controller.json"), "wt") as controllerFile:
+                json.dump(controller.records, controllerFile, indent=4, sort_keys=True)
+
         def onChartCompleted(e):
             self.completedCharts += 1
 
@@ -300,6 +325,7 @@ class ResultsAnalyzer:
 
     @handleChartException
     def exportTwoParameterScatter(self, fileName, results, parameter1, parameter2, valueKey='loss', cutoff=1.0, title="Scatter"):
+        loadMatplotlib()
         parameter1Key = parameter1.root[5:]
         parameter2Key = parameter2.root[5:]
 
@@ -439,6 +465,7 @@ class ResultsAnalyzer:
 
     @handleChartException
     def exportLossMatrixToImage(self, fileName, results, parameter1, parameter2, valueKey='loss', title='Loss Matrix', cutoff=1.0, mode='global', reduction='min'):
+        loadMatplotlib()
         scores, parameter1Buckets, parameter2Buckets = self.computeLossMatrix(results, parameter1, parameter2, valueKey, cutoff=cutoff, reduction=reduction)
 
         minVal = float(numpy.min(scores))
@@ -550,6 +577,7 @@ class ResultsAnalyzer:
 
     @handleChartException
     def exportSingleParameterLossChart(self, fileName, results, parameter, valueKey='loss', title='Loss Chart', cutoff=1.0, numBuckets=None, reduction='mean'):
+        loadMatplotlib()
         values, linearTrendLine, exponentialTrendLine = self.computeParameterResultValues(results, parameter, valueKey, cutoff, numBuckets, bucket_reduction=reduction)
 
         if self.singleParameterLossFigure is None:

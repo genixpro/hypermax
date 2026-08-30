@@ -1,0 +1,14 @@
+# Research-only dependencies.  These deliberately remain outside pyproject.toml
+# so installing Hypermax does not download benchmark or competitor stacks.
+ConfigSpace>=1.2,<2
+onnxruntime>=1.19
+optuna>=4.0,<5
+pandas>=2.2
+scikit-learn==1.6.1
+smac>=2.3,<3
+ujson>=5.10
+
+# Install the official benchmark package after this file with:
+#   python -m pip install --no-deps yahpo-gym==1.0.2
+# Its metadata pins ConfigSpace<=0.6.1 even though its runtime API is compatible
+# with the modern ConfigSpace required by SMAC 2.x.

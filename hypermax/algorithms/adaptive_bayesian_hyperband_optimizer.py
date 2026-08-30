@@ -14,9 +14,10 @@ import copy
 class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
     """ This algorithm combines our ATPE optimizer with Hyperband"""
 
-    def __init__(self, baseOptimizer, min_budget, max_budget, eta = 3):
+    def __init__(self, baseOptimizer, min_budget, max_budget, eta = 3, seed=None):
         self.baseOptimizer = baseOptimizer
-        self.randomOptimizer = RandomSearchOptimizer()
+        self.randomOptimizer = RandomSearchOptimizer(seed=seed)
+        self._random = random.Random(seed) if seed is not None else random
 
         self.min_budget = min_budget
         self.max_budget = max_budget  # maximum iterations per configuration
@@ -137,7 +138,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
         if run['input_round'] == -1:
             resultsForReccomendation = [result for result in results if result['$budget'] == run['budget']]
 
-            if random.uniform(0, 1) < 0.3:
+            if self._random.uniform(0, 1) < 0.3:
                 params = self.randomOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation, currentTrials)
             else:
                 params = self.baseOptimizer.recommendNextParameters(hyperparameterSpace, resultsForReccomendation, currentTrials)
@@ -159,7 +160,7 @@ class AdaptiveBayesianHyperband(OptimizationAlgorithmBase):
             neededCanonicalStrings = set(inputCanonicalStrings).difference(existingCanonicalStrings)
             neededResults = [inputResultsForRun[inputCanonicalStrings.index(resultString)] for resultString in neededCanonicalStrings]
 
-            chosenResult = random.choice(neededResults)
+            chosenResult = self._random.choice(neededResults)
             params = space.convertToStructuredValues(chosenResult)
             params['$budget'] = run['budget']
             params['$loop'] = loop

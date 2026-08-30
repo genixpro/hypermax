@@ -26,6 +26,23 @@ class OptimizationAlgorithmBase:
     def convertResultsToTrials(self, hyperparameterSpace, results):
         trials = hyperopt.Trials()
 
+        selectors = []
+
+        def collectSelectors(node, path=""):
+            alternatives = node.get("anyOf", node.get("oneOf"))
+            if alternatives is not None:
+                if path:
+                    selectors.append((path, node.get("name", "root." + path)))
+                for index, child in enumerate(alternatives):
+                    childPath = f"{path}.{index}" if path else str(index)
+                    collectSelectors(child, childPath)
+            elif node.get("type") == "object":
+                for key, child in node.get("properties", {}).items():
+                    childPath = f"{path}.{key}" if path else key
+                    collectSelectors(child, childPath)
+
+        collectSelectors(hyperparameterSpace)
+
         for resultIndex, result in enumerate(results):
             data = {
                 'book_time': datetime.datetime.now(),
@@ -45,7 +62,7 @@ class OptimizationAlgorithmBase:
             }
 
             for param in Hyperparameter(hyperparameterSpace).getFlatParameters():
-                value = result[param.name]
+                value = result.get(param.name)
                 if value != "" and value is not None:
                     if 'enum' in param.config:
                         value = param.config['enum'].index(value)
@@ -55,6 +72,18 @@ class OptimizationAlgorithmBase:
                 else:
                     data['misc']['idxs'][param.hyperoptVariableName] = []
                     data['misc']['vals'][param.hyperoptVariableName] = []
+
+            # ``getFlatParameters`` historically excludes hp.choice selector
+            # nodes.  Hyperopt still requires their observations when trials
+            # from conditional spaces are reconstructed.
+            for resultName, hyperoptName in selectors:
+                value = result.get(resultName)
+                if value != "" and value is not None:
+                    data['misc']['idxs'][hyperoptName] = [resultIndex]
+                    data['misc']['vals'][hyperoptName] = [int(value)]
+                else:
+                    data['misc']['idxs'][hyperoptName] = []
+                    data['misc']['vals'][hyperoptName] = []
 
             trials.insert_trial_doc(data)
         return trials
