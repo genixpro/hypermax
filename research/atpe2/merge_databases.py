@@ -60,10 +60,9 @@ def merge_database_shards(destination: Path, sources: list[Path]) -> dict[str, A
                     if row["status"] == "complete":
                         output.mark_state_complete(state_id)
                     copied_states += 1
-                for row in connection.execute(
-                    "SELECT * FROM evaluations ORDER BY evaluation_id"
-                ):
-                    inserted = output.add_evaluation(
+                batch = []
+                for row in connection.execute("SELECT * FROM evaluations ORDER BY evaluation_id"):
+                    batch.append(
                         {
                             "state_id": state_ids[row["state_id"]],
                             "task_id": row["task_id"],
@@ -91,7 +90,10 @@ def merge_database_shards(destination: Path, sources: list[Path]) -> dict[str, A
                             ),
                         }
                     )
-                    copied_evaluations += int(inserted)
+                    if len(batch) == 5_000:
+                        copied_evaluations += output.add_evaluations(batch)
+                        batch = []
+                copied_evaluations += output.add_evaluations(batch)
                 payload = source.read_bytes()
                 source_records.append(
                     {

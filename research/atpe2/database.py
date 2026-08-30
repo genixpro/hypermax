@@ -215,39 +215,56 @@ class ResearchStore:
         return state_id
 
     def add_evaluation(self, record: dict[str, Any]) -> bool:
-        configuration_hash = content_hash(record["configuration"])
-        evaluation_id = content_hash(
-            [record["state_id"], configuration_hash, record["rollout_seed"], record["repeat_index"]]
-        )
-        cursor = self.connection.execute(
-            """INSERT OR IGNORE INTO evaluations(
-                evaluation_id, state_id, task_id, generator_version, history_lineage,
-                configuration_json, configuration_hash, rollout_seed, repeat_index,
-                incumbent_curve_json, failures_json, timing_json,
-                dependency_versions_json, acquisition_role, varied_groups_json,
-                utility
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                evaluation_id,
-                record["state_id"],
-                record["task_id"],
-                record["generator_version"],
-                record["history_lineage"],
-                canonical_json(record["configuration"]),
-                configuration_hash,
-                int(record["rollout_seed"]),
-                int(record["repeat_index"]),
-                canonical_json(record["incumbent_curve"]),
-                canonical_json(record.get("failures", [])),
-                canonical_json(record.get("timing", {})),
-                canonical_json(record.get("dependency_versions", {})),
-                str(record.get("acquisition_role", "legacy_joint")),
-                canonical_json(record.get("varied_groups", [])),
-                record.get("utility"),
-            ),
-        )
-        self.connection.commit()
-        return cursor.rowcount == 1
+        return self.add_evaluations([record]) == 1
+
+    def add_evaluations(self, records: list[dict[str, Any]]) -> int:
+        """Insert evaluation records in one transaction for shard merges."""
+        if not records:
+            return 0
+        values = []
+        for record in records:
+            configuration_hash = content_hash(record["configuration"])
+            evaluation_id = content_hash(
+                [
+                    record["state_id"],
+                    configuration_hash,
+                    record["rollout_seed"],
+                    record["repeat_index"],
+                ]
+            )
+            values.append(
+                (
+                    evaluation_id,
+                    record["state_id"],
+                    record["task_id"],
+                    record["generator_version"],
+                    record["history_lineage"],
+                    canonical_json(record["configuration"]),
+                    configuration_hash,
+                    int(record["rollout_seed"]),
+                    int(record["repeat_index"]),
+                    canonical_json(record["incumbent_curve"]),
+                    canonical_json(record.get("failures", [])),
+                    canonical_json(record.get("timing", {})),
+                    canonical_json(record.get("dependency_versions", {})),
+                    str(record.get("acquisition_role", "legacy_joint")),
+                    canonical_json(record.get("varied_groups", [])),
+                    record.get("utility"),
+                )
+            )
+        before = self.connection.total_changes
+        with self.connection:
+            self.connection.executemany(
+                """INSERT OR IGNORE INTO evaluations(
+                    evaluation_id, state_id, task_id, generator_version, history_lineage,
+                    configuration_json, configuration_hash, rollout_seed, repeat_index,
+                    incumbent_curve_json, failures_json, timing_json,
+                    dependency_versions_json, acquisition_role, varied_groups_json,
+                    utility
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                values,
+            )
+        return self.connection.total_changes - before
 
     def has_evaluation(
         self, state_id: str, configuration: dict[str, Any], rollout_seed: int, repeat_index: int
