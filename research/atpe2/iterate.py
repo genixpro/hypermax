@@ -41,6 +41,14 @@ ITERATION_ROLLOUT_SEEDS = 2
 ITERATION_INSTANCES_PER_FAMILY = 2
 ITERATION_STEPS = 10
 PERFORMANCE_FAMILIES = {"smooth", "rugged", "interaction", "hierarchical"}
+ITERATION_FAMILIES = (
+    "constant_zero",
+    "hierarchical",
+    "interaction",
+    "plateau",
+    "rugged",
+    "smooth",
+)
 COMPARATOR_OPTIMIZERS = ("random", "hyperopt_tpe", "legacy_atpe")
 COMPARATOR_CACHE_SCHEMA_VERSION = "atpe2-iteration-comparators-v1"
 
@@ -55,13 +63,16 @@ def environment_identity() -> dict[str, str]:
     }
 
 
-def validated_comparator_rows(cache: dict[str, Any], seed: int) -> list[dict[str, Any]]:
+def validated_comparator_rows(
+    cache: dict[str, Any], seed: int, task_families: tuple[str, ...] = ITERATION_FAMILIES
+) -> list[dict[str, Any]]:
     expected = {
         "schema_version": COMPARATOR_CACHE_SCHEMA_VERSION,
         "iteration_schema_version": ITERATION_SCHEMA_VERSION,
         "seed": seed,
         "optimizers": list(COMPARATOR_OPTIMIZERS),
         "environment": environment_identity(),
+        "task_families": list(task_families),
     }
     for key, value in expected.items():
         if cache.get(key) != value:
@@ -365,6 +376,7 @@ def run_iteration(
     seed: int,
     workers: int = 6,
     comparator_cache: Path | None = None,
+    task_families: tuple[str, ...] = ITERATION_FAMILIES,
 ) -> dict[str, Any]:
     if workers < 1:
         raise ValueError("workers must be positive")
@@ -373,6 +385,10 @@ def run_iteration(
         seed + 70_000_000,
         instances_per_family=ITERATION_INSTANCES_PER_FAMILY,
     )
+    unknown = set(task_families) - set(ITERATION_FAMILIES)
+    if unknown or not task_families:
+        raise ValueError(f"Unknown or empty iteration families: {sorted(unknown)}")
+    tasks = [task for task in tasks if task.family in task_families]
     optimizer_names = ("atpe2",) if comparator_cache else ITERATION_OPTIMIZERS
     jobs = [
         (task, task_index, seed, manifest_path, optimizer_names)
@@ -387,7 +403,7 @@ def run_iteration(
     comparator_identity = None
     if comparator_cache:
         cache = json.loads(comparator_cache.read_text())
-        rows.extend(validated_comparator_rows(cache, seed))
+        rows.extend(validated_comparator_rows(cache, seed, task_families))
         paired: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
             key = (
@@ -447,6 +463,9 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--comparator-cache", type=Path)
+    parser.add_argument(
+        "--families", nargs="+", choices=ITERATION_FAMILIES, default=ITERATION_FAMILIES
+    )
     args = parser.parse_args(argv)
     report = run_iteration(
         args.manifest,
@@ -454,6 +473,7 @@ def main(argv=None):
         args.seed,
         args.workers,
         args.comparator_cache,
+        tuple(args.families),
     )
     print(
         json.dumps(

@@ -15,6 +15,7 @@ from .iterate import (
     COMPARATOR_OPTIMIZERS,
     ITERATION_CHECKPOINTS,
     ITERATION_INSTANCES_PER_FAMILY,
+    ITERATION_FAMILIES,
     ITERATION_ROLLOUT_SEEDS,
     ITERATION_SCHEMA_VERSION,
     ITERATION_STEPS,
@@ -26,7 +27,10 @@ from .synthetic import synthetic_tasks
 
 
 def run_comparator_cache(
-    output: Path, seed: int, workers: int = 6
+    output: Path,
+    seed: int,
+    workers: int = 6,
+    task_families: tuple[str, ...] = ITERATION_FAMILIES,
 ) -> dict[str, Any]:
     if workers < 1:
         raise ValueError("workers must be positive")
@@ -35,6 +39,10 @@ def run_comparator_cache(
         seed + 70_000_000,
         instances_per_family=ITERATION_INSTANCES_PER_FAMILY,
     )
+    unknown = set(task_families) - set(ITERATION_FAMILIES)
+    if unknown or not task_families:
+        raise ValueError(f"Unknown or empty comparator families: {sorted(unknown)}")
+    tasks = [task for task in tasks if task.family in task_families]
     jobs = [
         (task, task_index, seed, None, COMPARATOR_OPTIMIZERS)
         for task_index, task in enumerate(tasks)
@@ -51,6 +59,7 @@ def run_comparator_cache(
         "seed": seed,
         "optimizers": list(COMPARATOR_OPTIMIZERS),
         "environment": environment_identity(),
+        "task_families": list(task_families),
         "protocol": {
             "trajectory_methods": list(ITERATION_TRAJECTORIES),
             "checkpoints": list(ITERATION_CHECKPOINTS),
@@ -78,8 +87,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument(
+        "--families", nargs="+", choices=ITERATION_FAMILIES, default=ITERATION_FAMILIES
+    )
     args = parser.parse_args(argv)
-    report = run_comparator_cache(args.output, args.seed, args.workers)
+    report = run_comparator_cache(
+        args.output, args.seed, args.workers, tuple(args.families)
+    )
     print(
         json.dumps(
             {

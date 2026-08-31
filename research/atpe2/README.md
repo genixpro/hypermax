@@ -254,6 +254,14 @@ python -m research.atpe2.cache_comparators comparators-7.json --seed 7 --workers
 python -m research.atpe2.iterate candidate/manifest.json candidate-7.json --seed 7 --workers 6 --comparator-cache comparators-7.json
 ```
 
+Targeted hierarchy/interaction screens use separate environment-locked caches
+and the same family filter for comparator and candidate runs:
+
+```bash
+python -m research.atpe2.cache_comparators targeted-19.json --seed 19 --families hierarchical interaction
+python -m research.atpe2.iterate winner/manifest.json targeted-winner-19.json --seed 19 --comparator-cache targeted-19.json --families hierarchical interaction
+```
+
 Continuation and classic-teacher collection are deliberately unavailable until
 a factorized manifest reports passing component gates. Continuation uses 24
 training-only tasks at checkpoints 25 and 50 and stores paired five- and

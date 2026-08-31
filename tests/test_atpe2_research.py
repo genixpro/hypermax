@@ -29,6 +29,7 @@ from research.atpe2.iterate import (
     COMPARATOR_CACHE_SCHEMA_VERSION,
     COMPARATOR_OPTIMIZERS,
     ITERATION_SCHEMA_VERSION,
+    ITERATION_FAMILIES,
     environment_identity,
     validated_comparator_rows,
 )
@@ -596,6 +597,7 @@ def test_comparator_cache_is_seeded_and_environment_locked():
         "seed": 7,
         "optimizers": list(COMPARATOR_OPTIMIZERS),
         "environment": environment_identity(),
+        "task_families": list(ITERATION_FAMILIES),
         "rows": [{"optimizer": "hyperopt_tpe"}],
     }
 
