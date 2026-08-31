@@ -61,7 +61,7 @@ Repository = "https://github.com/electricbrainio/hypermax"
 include = ["hypermax*"]
 
 [tool.setuptools.package-data]
-hypermax = ["atpe_models/*.txt", "atpe_models/*.json", "atpe2_models/*.txt", "atpe2_models/*.json", "atpe2_models/*.md"]
+hypermax = ["atpe_models/*.txt", "atpe_models/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

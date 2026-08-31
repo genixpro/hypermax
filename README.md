@@ -187,33 +187,12 @@ $ hypermax search.json results_0/
 
 # Optimization Algorithms
 
-Hypermax supports 6 optimization methods:
+Hypermax supports 4 optimization methods:
 
  - "random" - Does a fully random search
  - "tpe" - The classic TPE algorithm, with its default configuration
  - "atpe" - Our Adaptive-TPE algorithm, a good general purpose optimizer 
  - "abh" - Adaptive Bayesian Hyperband - this is an optimizer that its able to learn from partially trained algorithms in order to optimizer your fully trained algorithm
- - "atpe2" - the second-generation, robust Adaptive-TPE controller, backed by the packaged Gate 2-validated ensemble. Every five-trial block is selected by the adaptive ensemble; model or schema errors are surfaced instead of silently falling back to standard TPE.
- - "abh2" - the ATPE2 compatibility path through the existing ABH scheduler. It is compatibility-tested only and makes no multi-fidelity performance claim.
-
-Random, TPE, ATPE, and ATPE2 can all be used without additional algorithm configuration. An optional integer `search.seed` makes sampling reproducible; ATPE2 research commands require it explicitly.
-
-```json
-{
-  "search": {
-    "method": "atpe2",
-    "iterations": 100,
-    "seed": 42
-  }
-}
-```
-
-ATPE2 writes each five-trial adaptive controller decision, expected utility,
-uncertainty, seed, and model/schema identities to `atpe2_controller.json`
-alongside the normal result artifacts. The packaged Gate-2-approved policy uses
-eight 8-tree LightGBM members to score 32 Sobol actions plus the TPE anchor at
-each boundary; the anchor is an ordinary scored action, not a fallback.
-
 ## Adaptive Bayesian Hyperband
 
 The only optimizer in our toolkit that requires additional configuration is the Adaptive Bayesian Hyperband algorithm.

@@ -37,8 +37,8 @@ class Optimizer:
         self.searchConfig = configuration.get('search', {})
 
         method = self.searchConfig.get("method")
-        if method not in {"random", "tpe", "atpe", "atpe2", "abh", "abh2"}:
-            raise ValueError("search.method must be one of: random, tpe, atpe, atpe2, abh, abh2")
+        if method not in {"random", "tpe", "atpe", "abh"}:
+            raise ValueError("search.method must be one of: random, tpe, atpe, abh")
 
         iterations = self.searchConfig.get("iterations")
         if not isinstance(iterations, int) or isinstance(iterations, bool) or iterations < 1:
@@ -105,21 +105,6 @@ class Optimizer:
                     self.searchConfig.get("eta", 3),
                     seed=seed,
                 )
-        elif method in {"atpe2", "abh2"}:
-            from hypermax.algorithms.atpe2_optimizer import ATPE2Optimizer
-
-            self.atpeOptimizer = ATPE2Optimizer(seed=0 if seed is None else seed)
-            if method == "abh2":
-                from hypermax.algorithms.adaptive_bayesian_hyperband_optimizer import AdaptiveBayesianHyperband
-
-                self.abhOptimizer = AdaptiveBayesianHyperband(
-                    self.atpeOptimizer,
-                    self.searchConfig.get("min_budget", 1),
-                    self.searchConfig.get("max_budget", 100),
-                    self.searchConfig.get("eta", 3),
-                    seed=seed,
-                )
-
         self.humanGuidedATPEOptimizer = HumanGuidedOptimizerWrapper(
             self.atpeOptimizer or self.tpeOptimizer
         )
@@ -137,7 +122,7 @@ class Optimizer:
         return {
             "type": "object",
             "properties": {
-                "method": {"type": "string", "enum": ['atpe', 'atpe2', 'tpe', 'random', 'abh', 'abh2']},
+                "method": {"type": "string", "enum": ['atpe', 'tpe', 'random', 'abh']},
                 "iterations": {"type": "integer", "minimum": 1},
                 "budget": {"type": "number"},
                 "seed": {"type": "integer"}
@@ -159,19 +144,7 @@ class Optimizer:
             self.lastLockedParameters = self.atpeOptimizer.lastLockedParameters
             self.atpeParamDetails = self.atpeOptimizer.atpeParamDetails
             return params
-        elif self.searchConfig['method'] == 'atpe2':
-            params = self.atpeOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results, self.currentTrials)
-            self.lastATPEParameters = self.atpeOptimizer.lastATPEParameters
-            self.lastLockedParameters = self.atpeOptimizer.lastLockedParameters
-            self.atpeParamDetails = self.atpeOptimizer.atpeParamDetails
-            return params
         elif self.searchConfig['method'] == 'abh':
-            params = self.abhOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results, self.currentTrials)
-            self.lastATPEParameters = self.atpeOptimizer.lastATPEParameters
-            self.lastLockedParameters = self.atpeOptimizer.lastLockedParameters
-            self.atpeParamDetails = self.atpeOptimizer.atpeParamDetails
-            return params
-        elif self.searchConfig['method'] == 'abh2':
             params = self.abhOptimizer.recommendNextParameters(self.config.data['hyperparameters'], self.results, self.currentTrials)
             self.lastATPEParameters = self.atpeOptimizer.lastATPEParameters
             self.lastLockedParameters = self.atpeOptimizer.lastLockedParameters
