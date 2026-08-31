@@ -153,6 +153,18 @@ def _relative_fit_weights(values: np.ndarray) -> np.ndarray:
     return values * (len(values) / total)
 
 
+def _residual_error_grid(
+    truth: np.ndarray, additive: np.ndarray, residual: np.ndarray
+) -> tuple[float, float, dict[str, float]]:
+    errors = {
+        str(weight): float(mean_squared_error(truth, additive + weight * residual))
+        for weight in RESIDUAL_WEIGHT_GRID
+        if weight > 0.0
+    }
+    weight, error = min(errors.items(), key=lambda item: (item[1], float(item[0])))
+    return float(weight), error, errors
+
+
 def _fit_teacher_predictors(
     teacher_rows: list[dict[str, Any]],
     extractor: Any,
@@ -475,11 +487,20 @@ def component_gate_report(
         dtype=float,
     )
     additive_mse = float(mean_squared_error(truth, additive)) if len(truth) else float("inf")
-    residual_mse = (
-        float(mean_squared_error(truth, additive + residual_prediction[residual_positions]))
-        if len(truth)
-        else float("inf")
-    )
+    if len(truth):
+        best_residual_weight, residual_mse, residual_mse_by_weight = (
+            _residual_error_grid(
+                truth, additive, residual_prediction[residual_positions]
+            )
+        )
+    else:
+        best_residual_weight = RESIDUAL_WEIGHT_GRID[1]
+        residual_mse = float("inf")
+        residual_mse_by_weight = {
+            str(weight): float("inf")
+            for weight in RESIDUAL_WEIGHT_GRID
+            if weight > 0.0
+        }
     catastrophic = np.asarray(
         [rows[index]["catastrophic_label"] for index in validation_indices], dtype=int
     )
@@ -544,6 +565,8 @@ def component_gate_report(
         "full_action_mse": {
             "additive": additive_mse,
             "additive_plus_residual": residual_mse,
+            "best_residual_weight": best_residual_weight,
+            "by_residual_weight": residual_mse_by_weight,
         },
         "catastrophic": {
             "auroc": auroc,

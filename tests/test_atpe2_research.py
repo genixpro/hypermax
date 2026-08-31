@@ -19,6 +19,7 @@ from research.atpe2.acquisition import (
     structured_action_candidates,
 )
 from research.atpe2.factorized import (
+    RESIDUAL_WEIGHT_GRID,
     derive_factorized_rows,
     robust_support_artifact,
 )
@@ -37,7 +38,11 @@ from research.atpe2.select_factorized import (
 )
 from research.atpe2.fit_grid import BASE_BRANCHES, declared_jobs
 from research.atpe2.train import grouped_split
-from research.atpe2.train_factorized import _relative_fit_weights, train_factorized
+from research.atpe2.train_factorized import (
+    _relative_fit_weights,
+    _residual_error_grid,
+    train_factorized,
+)
 from research.atpe2.gates import (
     configurations_equivalent,
     gate2_report,
@@ -637,6 +642,18 @@ def test_lightgbm_fit_weights_preserve_ratios_with_unit_mean_mass():
 
     assert np.mean(scaled) == pytest.approx(1.0)
     assert scaled[0] / scaled[2] == pytest.approx(raw[0] / raw[2])
+
+
+def test_component_gate_uses_only_predeclared_nonzero_residual_shrinkage():
+    best_weight, error, by_weight = _residual_error_grid(
+        np.asarray([1.0]), np.asarray([0.0]), np.asarray([3.0])
+    )
+
+    assert set(RESIDUAL_WEIGHT_GRID) == {0.0, 0.25, 0.5}
+    assert set(by_weight) == {"0.25", "0.5"}
+    assert best_weight == 0.25
+    assert error == pytest.approx(0.0625)
+    assert (1.0 - 3.0) ** 2 > 1.0
 
 
 def test_third_repeat_selection_can_be_recomputed_from_paired_rows_only():
