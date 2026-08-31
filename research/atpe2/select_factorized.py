@@ -82,6 +82,7 @@ def main(argv: list[str] | None = None) -> None:
     }
     if args.fresh_policy_quality:
         quality = json.loads(args.fresh_policy_quality.read_text())
+        quality = quality.get("quality_by_model_artifact_sha256", quality)
         report["behavioral"] = select_behavioral_variants(selected, quality)
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps(report, indent=2))

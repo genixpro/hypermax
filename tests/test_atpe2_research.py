@@ -24,6 +24,7 @@ from research.atpe2.factorized import (
     robust_support_artifact,
 )
 from research.atpe2.factorized_screen import assess_five_quick_screens
+from research.atpe2.fresh_policy import REJECTED_POLICY_QUALITY, summarize_fresh_policy
 from research.atpe2.iterate import (
     COMPARATOR_CACHE_SCHEMA_VERSION,
     COMPARATOR_OPTIMIZERS,
@@ -626,6 +627,23 @@ def test_variant_pruning_rejects_failed_gates_and_caps_both_stages(tmp_path):
     assert len(selected) == 12
     assert all(row["model_version"] != "model-14" for row in selected)
     assert len(behavioral) == 6
+
+
+def test_fresh_policy_quality_penalizes_family_instability_and_fallbacks():
+    rows = [
+        {
+            "family": family,
+            "scale_normalized_improvement_auc": value,
+            "adaptive_without_fallback": True,
+        }
+        for family, value in (("smooth", 1.0), ("rugged", 0.0))
+    ]
+    stable = summarize_fresh_policy(rows)
+    rows[0]["adaptive_without_fallback"] = False
+    rejected = summarize_fresh_policy(rows)
+
+    assert stable["held_out_stable_policy_quality"] == pytest.approx(0.45)
+    assert rejected["held_out_stable_policy_quality"] == REJECTED_POLICY_QUALITY
 
 
 def test_declared_grid_is_bounded_and_shardable_without_duplicates():

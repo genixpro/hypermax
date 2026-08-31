@@ -236,6 +236,15 @@ python -m research.atpe2.fit_grid factorized.sqlite fits --seed 20260830 --shard
 python -m research.atpe2.select_factorized selection.json fits/*/manifest.json
 ```
 
+After manifest-only pruning, run the fixed held-out five-step quality protocol
+on no more than twelve manifests. Feed its artifact-keyed quality mapping back
+into selection to advance no more than six candidates to the seed-7 smoke:
+
+```bash
+python -m research.atpe2.fresh_policy fresh-policy.json selected/*/manifest.json --seed 20260830 --workers 4
+python -m research.atpe2.select_factorized selection.json selected/*/manifest.json --fresh-policy-quality fresh-policy.json
+```
+
 Generate each seed's comparator cache once on the Linux screen host, then pass
 that immutable cache to every candidate. With a cache, `iterate` computes only
 ATPE2 rows and validates the protocol, seed, and environment before pairing:
